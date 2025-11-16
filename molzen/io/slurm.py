@@ -131,8 +131,7 @@ def slurm_bot(
 
                 else:
                     # make a temporary sbatch script
-                    sbatch_script = """#!/bin/bash
-"""
+                    sbatch_script = "#!/bin/bash\n"
                     for key, value in slurm_kwargs.items():
                         if key.startswith("--"):
                             sbatch_script += f"#SBATCH {key}={value}\n"
@@ -140,20 +139,16 @@ def slurm_bot(
                             sbatch_script += f"#SBATCH {key} {value}\n"
                         else:
                             raise ValueError(f"Invalid SLURM argument key: {key}")
-                    sbatch_script += f"""
-{task}
-"""
+                    sbatch_script += f"\n{task}\n"
                     # write to a temp file
                     temp_script_path = "temp_sbatch_script.sh"
                     with open(temp_script_path, "w") as temp_f:
                         temp_f.write(sbatch_script)
                     cmd = ["sbatch", temp_script_path]
-
-                # Submit the job
                 print(f"Submitting: {' '.join(cmd)}")
 
                 # --- Submit the job ---
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(cmd)
 
                 if result.returncode == 0:
                     # --- SUCCESS ---
