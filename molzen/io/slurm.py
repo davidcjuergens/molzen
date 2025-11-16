@@ -61,6 +61,7 @@ def slurm_bot(
     slurm_kwargs: dict,
     max_queued: int = 15,
     sleep_time_minutes: int = 5,
+    use_wrap: bool = False,
 ):
     """Submits jobs from a task file to SLURM queue, ensuring that the total number of queued jobs does not exceed max_queued.
 
@@ -69,6 +70,7 @@ def slurm_bot(
         slurm_kwargs (dict): Dictionary of SLURM submission parameters.
         max_queued (int): Maximum number of jobs allowed in the queue.
         sleep_time_minutes (int): Minutes to sleep before rechecking the queue.
+        use_wrap (bool): Whether to use --wrap for job submission. if not, creates individual sbatch scripts.
     """
     # make a copy of the original task file for safety
     remaining_tasks_file = task_file + ".remaining"
@@ -115,15 +117,37 @@ def slurm_bot(
                     continue
 
                 # Prepare SLURM submission command
-                cmd = ["sbatch"]
-                for key, value in slurm_kwargs.items():
-                    if key.startswith("--"):
-                        cmd.append(f"{key}={value}")
-                    elif key.startswith("-"):
-                        cmd.append(f"{key} {value}")
-                    else:
-                        raise ValueError(f"Invalid SLURM argument key: {key}")
-                cmd.append(f"--wrap='{task}'")
+
+                if use_wrap:
+                    cmd = ["sbatch"]
+                    for key, value in slurm_kwargs.items():
+                        if key.startswith("--"):
+                            cmd.append(f"{key}={value}")
+                        elif key.startswith("-"):
+                            cmd.append(f"{key} {value}")
+                        else:
+                            raise ValueError(f"Invalid SLURM argument key: {key}")
+                    cmd.append(f"--wrap='{task}'")
+
+                else:
+                    # make a temporary sbatch script
+                    sbatch_script = """#!/bin/bash
+"""
+                    for key, value in slurm_kwargs.items():
+                        if key.startswith("--"):
+                            sbatch_script += f"#SBATCH {key}={value}\n"
+                        elif key.startswith("-"):
+                            sbatch_script += f"#SBATCH {key} {value}\n"
+                        else:
+                            raise ValueError(f"Invalid SLURM argument key: {key}")
+                    sbatch_script += f"""
+{task}
+"""
+                    # write to a temp file
+                    temp_script_path = "temp_sbatch_script.sh"
+                    with open(temp_script_path, "w") as temp_f:
+                        temp_f.write(sbatch_script)
+                    cmd = ["sbatch", temp_script_path]
 
                 # Submit the job
                 print(f"Submitting: {' '.join(cmd)}")
