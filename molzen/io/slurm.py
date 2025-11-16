@@ -148,7 +148,11 @@ def slurm_bot(
                 print(f"Submitting: {' '.join(cmd)}")
 
                 # --- Submit the job ---
-                result = subprocess.run(cmd)
+                result = subprocess.run(cmd, capture_output=True, text=True)
+
+                if not use_wrap:
+                    # remove the temporary script
+                    os.remove(temp_script_path)
 
                 if result.returncode == 0:
                     # --- SUCCESS ---
