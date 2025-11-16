@@ -117,7 +117,7 @@ def slurm_bot(
                 # Prepare SLURM submission command
                 cmd = ["sbatch"]
                 for key, value in slurm_kwargs.items():
-                    cmd.append(f"--{key}={value}")
+                    cmd.append(f"{key}={value}")
                 cmd.append(f"--wrap='{task}'")
 
                 # Submit the job
