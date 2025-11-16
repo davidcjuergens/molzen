@@ -117,7 +117,12 @@ def slurm_bot(
                 # Prepare SLURM submission command
                 cmd = ["sbatch"]
                 for key, value in slurm_kwargs.items():
-                    cmd.append(f"{key}={value}")
+                    if key.startswith("--"):
+                        cmd.append(f"{key}={value}")
+                    elif key.startswith("-"):
+                        cmd.append(f"{key} {value}")
+                    else:
+                        raise ValueError(f"Invalid SLURM argument key: {key}")
                 cmd.append(f"--wrap='{task}'")
 
                 # Submit the job
