@@ -73,6 +73,7 @@ def make_terachem_job_array(
                     If it's a single dict, will duplicate kwargs across xyzs
         tags: optional list of tags to attach to scr dirs and output files
         terachem_exec: terachem executable command
+        clobber: whether to overwrite existing files
     """
     if isinstance(tc_kwargs, list):
         assert len(tc_kwargs) == len(xyzs)
@@ -104,7 +105,7 @@ def make_terachem_job_array(
         )
 
         # make one liner to run terachem for this input
-        one_liner = f"{terachem_executable} {input_path} > {log_path} 2>&1"
+        one_liner = f"{terachem_executable} {input_path} > {log_path}"
         one_liners.append(one_liner)
 
     # write out jobs to a task array
