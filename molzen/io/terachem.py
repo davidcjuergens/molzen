@@ -105,7 +105,7 @@ def make_terachem_job_array(
         )
 
         # make one liner to run terachem for this input
-        one_liner = f"{terachem_executable} {input_path} > {log_path}"
+        one_liner = f"{terachem_executable} {input_path} > {log_path} 2>&1"
         one_liners.append(one_liner)
 
     # write out jobs to a task array
