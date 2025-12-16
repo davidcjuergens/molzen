@@ -181,11 +181,12 @@ def slurm_bot(
             )
             time.sleep(sleep_time_minutes * 60)
 
+
 def create_slurm_array_script(task_file, sbatch_params, output_script="submit.sh"):
     """
     Written by Gemini 3.0
     Generates a Slurm array script based on a file of commands.
-    
+
     Args:
         task_file (str): Path to the file containing one command per line.
         sbatch_params (dict): Dictionary of sbatch flags (keys) and values.
@@ -193,27 +194,28 @@ def create_slurm_array_script(task_file, sbatch_params, output_script="submit.sh
     """
     # 1. Get absolute path of task file so the script runs from anywhere
     abs_task_file = os.path.abspath(task_file)
-    
+    task_dir = os.path.dirname(abs_task_file)
+
     # 2. Count lines to determine array size
-    with open(abs_task_file, 'r') as f:
+    with open(abs_task_file, "r") as f:
         num_tasks = sum(1 for line in f if line.strip())
 
-    with open(output_script, 'w') as f:
+    with open(os.path.join(task_dir, output_script), "w") as f:
         f.write("#!/bin/bash\n")
-        
+
         # 3. Write User SBATCH params
         for flag, value in sbatch_params.items():
             # Handles both long (--time=...) and short (-p ...) formatting styles
             separator = "=" if flag.startswith("--") else " "
             f.write(f"#SBATCH {flag}{separator}{value}\n")
-            
+
         # 4. Write Array Directive (1 to N)
         f.write(f"#SBATCH --array=1-{num_tasks}\n\n")
-        
+
         # 5. Write Execution Logic
         # Uses sed to extract the line number matching the array task ID
-        f.write(f"cmd=$(sed -n \"${{SLURM_ARRAY_TASK_ID}}p\" {abs_task_file})\n")
-        f.write("echo \"Running task: $cmd\"\n")
+        f.write(f'cmd=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {abs_task_file})\n')
+        f.write('echo "Running task: $cmd"\n')
         f.write("eval $cmd\n")
 
     print(f"Generated {output_script} with {num_tasks} array tasks.")
