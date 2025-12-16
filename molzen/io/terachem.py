@@ -63,6 +63,7 @@ def make_terachem_job_array(
     tags: list = None,
     terachem_executable: str = "terachem",
     clobber: bool = False,
+    task_filename: str = "terachem_tasks.txt",
 ):
     """Make a batch of terachem jobs that can be executed
 
@@ -109,7 +110,7 @@ def make_terachem_job_array(
         one_liners.append(one_liner)
 
     # write out jobs to a task array
-    tasks_file = os.path.join(workdir, "terachem_tasks.txt")
+    tasks_file = os.path.join(workdir, task_filename)
     if not clobber:
         assert not os.path.exists(tasks_file), (
             f"Refusing to clobber already existing {tasks_file}"
