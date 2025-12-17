@@ -37,6 +37,13 @@ def parse_terachem_output(
             out["input_args"] = tc_kwargs
             continue
 
+        ### Ground State Results ###
+        if "FINAL ENERGY:" in line:
+            energy_line = line.strip().split()
+            out["ground_state_energy"] = float(energy_line[2])
+            i += 1
+            continue
+
         #### Excited State Results ###
         if "Final Excited State Results" in line:
             excited_state_data, i = parse_excited_state_section(lines, start=i)
