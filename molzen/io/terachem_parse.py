@@ -5,7 +5,7 @@ import numpy as np
 
 
 def parse_terachem_output(
-    file_path: str, custom_section_parsers: Union[None, dict] = None
+    file_path: str, custom_section_parsers: Union[None, dict] = None, raw_str_in:bool = False
 ) -> dict:
     """
     Parse a terachem output file and return relevant data.
@@ -15,10 +15,13 @@ def parse_terachem_output(
             Dict keys should be strings to search for in a line to identify the section start.
             Dict values should be (name, callable) tuples, where name is the key to store data under,
             and callable is a function that takes (lines, start_idx) and returns (section_dict, end_idx).
+        raw_str_in (bool, optional): If True, file_path is treated as raw string input rather than a file path.
     """
-
-    with open(file_path, "r") as tc_file:
-        lines = tc_file.readlines()
+    if not raw_str_in:
+        with open(file_path, "r") as tc_file:
+            lines = tc_file.readlines()
+    else:
+        lines = file_path.splitlines()
 
     out = {}
     i = 0
