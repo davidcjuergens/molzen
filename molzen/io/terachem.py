@@ -1,7 +1,7 @@
 """Terachem input/output/submission utils"""
 
 import os
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
 
 
 def make_terachem_input(
@@ -11,6 +11,7 @@ def make_terachem_input(
     workdir: str,
     tag=None,
     clobber=False,
+    constraints: Optional[List[str]] = None,
 ):
     """Makes a single terachem input file
 
@@ -22,6 +23,8 @@ def make_terachem_input(
         outdir: directory to write
         tag: optional tag to append to scrdir and input file name
         clobber: whether to overwrite existing input file
+        constraints: optional list of strings representing constraints to add. Each entry is one constraint line. The lines will be surrounded by $constraints ... $end
+
     """
 
     # make scr dir
@@ -51,6 +54,13 @@ def make_terachem_input(
         for key, val in tc_kwargs.items():
             space = " " * (spacer - len(key))
             f.write(f"{key}{space}{val}\n")
+
+        if constraints is not None and len(constraints):
+            f.write("\n")
+            f.write("$constraints\n")
+            for constraint_line in constraints:
+                f.write(f"{constraint_line}\n")
+            f.write("$end\n")
         f.write("end\n")
 
     return input_path
@@ -64,6 +74,7 @@ def make_terachem_job_array(
     terachem_executable: str = "terachem",
     clobber: bool = False,
     task_filename: str = "terachem_tasks.txt",
+    constraint_lists: Optional[List[List[str]]] = None,
 ):
     """Make a batch of terachem jobs that can be executed
 
@@ -75,7 +86,22 @@ def make_terachem_job_array(
         tags: optional list of tags to attach to scr dirs and output files
         terachem_exec: terachem executable command
         clobber: whether to overwrite existing files
+        constraint_lists: optional list of constraint lists. if tc_kwargs is a dict, this should be only one list of constraints. If tc_kwargs is a list of dicts, this should be a list of lists of constraints, one per job.
     """
+    if constraint_lists is not None:
+        if isinstance(tc_kwargs, list):
+            assert len(tc_kwargs) == len(constraint_lists) and isinstance(
+                constraint_lists, list
+            )
+            assert isinstance(constraint_lists[0], list)
+        else:
+            assert isinstance(constraint_lists, list) and isinstance(
+                constraint_lists[0], str
+            )
+            constraint_lists = [constraint_lists for _ in xyzs]
+    else:
+        pass
+
     if isinstance(tc_kwargs, list):
         assert len(tc_kwargs) == len(xyzs)
         tc_kwargs_list = tc_kwargs
@@ -99,6 +125,7 @@ def make_terachem_job_array(
             input_writedir=tc_input_dir,
             tag=tag,
             clobber=clobber,
+            constraints=constraint_lists[i] if constraint_lists is not None else None,
         )
 
         log_path = os.path.join(
