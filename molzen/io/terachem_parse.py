@@ -95,8 +95,29 @@ def parse_tc_input_flags(lines: list, start: int) -> dict:
     out = {}
 
     while not check_end(lines[j]):
+        line = lines[j]
+        stripped = line.strip()
+
+        if not stripped:
+            j += 1
+            continue
+
+        if stripped == "$constraints":
+            constraints = []
+            j += 1
+            while j < len(lines):
+                constraint_line = lines[j].strip()
+                if constraint_line == "$end":
+                    break
+                if constraint_line:
+                    constraints.append(constraint_line)
+                j += 1
+            out["constraints"] = constraints
+            j += 1
+            continue
+
         try:
-            key, val = flag_line_parser(lines[j])
+            key, val = stripped.split(None, 1)
         except Exception as e:
             print(f"Error parsing line {j}: {lines[j]}")
             print(f"Line j+1: {lines[j + 1]}")
