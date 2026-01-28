@@ -2,6 +2,7 @@ import numpy as np
 from typing import Callable, Optional
 
 from molzen.amino_acids import aa2long, aa2num, oneletter_code
+from molzen.ptable import ALL_SYMBOLS
 
 
 def parse_xyz(xyz_fp):
@@ -100,6 +101,7 @@ def write_xyz(
     with open(filename, "w") as f:
         f.write(outstr)
 
+
 MOL2_HETATM_DTYPES = np.dtype(
     [
         ("atom_idx", "i4"),
@@ -108,9 +110,26 @@ MOL2_HETATM_DTYPES = np.dtype(
         ("element", "U4"),
         ("res_name", "U3"),
         ("xyz", "f4", (3,)),
-
     ]
 )
+
+
+_ELEMENT_SYMBOLS = set(ALL_SYMBOLS)
+
+
+def _infer_element_from_atom_name(atom_name: str) -> str:
+    letters = "".join(ch for ch in atom_name if ch.isalpha())
+    if not letters:
+        return ""
+    if len(letters) >= 2:
+        cand2 = letters[:2].capitalize()
+        if cand2 in _ELEMENT_SYMBOLS:
+            return cand2
+    cand1 = letters[0].upper()
+    if cand1 in _ELEMENT_SYMBOLS:
+        return cand1
+    return ""
+
 
 def parse_mol2(mol2_fp: str):
     """Parse a .mol2 file to extract atom information.
@@ -144,11 +163,20 @@ def parse_mol2(mol2_fp: str):
                 y = float(split[3])
                 z = float(split[4])
                 atom_type = split[5]
-                element = atom_type.split(".")[0]  # get element from atom type
+                element = _infer_element_from_atom_name(atom_name)
+                if not element:
+                    element = atom_type.split(".")[0].capitalize()
                 res_name = split[7] if len(split) > 7 else ""
 
                 het = np.array(
-                    (atom_idx, atom_name, atom_type, element, res_name, np.array([x, y, z])),
+                    (
+                        atom_idx,
+                        atom_name,
+                        atom_type,
+                        element,
+                        res_name,
+                        np.array([x, y, z]),
+                    ),
                     dtype=MOL2_HETATM_DTYPES,
                 )
                 hetatm_data.append(het)
