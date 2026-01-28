@@ -241,7 +241,7 @@ def parse_pdb(pdb_fp: str):
                 # this will raise a KeyError for non-standard residues
                 seq.append(oneletter_code[res_name])
                 cur_res_id = res_id
-                cur_xyz = np.full((14, 3), np.nan)
+                cur_xyz = np.full((27, 3), np.nan)
 
             aa_index = aa2num[res_name]
             atom_map = aa_atom_idx[aa_index]
