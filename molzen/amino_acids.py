@@ -8,6 +8,9 @@ oneletter_code = {"ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D",
                   "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
                   "UNK": "X", "MAS": "Z"}
 
+aa_3_to_1 = oneletter_code
+aa_1_to_3 = {v: k for k, v in oneletter_code.items()}
+
 num2aa=[
     'ALA','ARG','ASN','ASP','CYS',
     'GLN','GLU','GLY','HIS','ILE',
