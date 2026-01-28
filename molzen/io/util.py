@@ -100,6 +100,17 @@ def write_xyz(
     with open(filename, "w") as f:
         f.write(outstr)
 
+MOL2_HETATM_DTYPES = np.dtype(
+    [
+        ("atom_idx", "i4"),
+        ("atom_name", "U8"),
+        ("atom_type", "U8"),
+        ("element", "U4"),
+        ("res_name", "U3"),
+        ("xyz", "f4", (3,)),
+
+    ]
+)
 
 def parse_mol2(mol2_fp: str):
     """Parse a .mol2 file to extract atom information.
@@ -107,8 +118,7 @@ def parse_mol2(mol2_fp: str):
     Args:
         mol2_fp (str): Path to the .mol2 file.
     """
-    elements = []
-    coords = []
+    hetatm_data = []
 
     with open(mol2_fp, "r") as f:
         lines = f.readlines()
@@ -128,15 +138,22 @@ def parse_mol2(mol2_fp: str):
                 if len(split) < 6:
                     continue  # malformed line
 
-                element = split[5].split(".")[0]  # get element from atom type
+                atom_idx = int(split[0])
+                atom_name = split[1]
                 x = float(split[2])
                 y = float(split[3])
                 z = float(split[4])
+                atom_type = split[5]
+                element = atom_type.split(".")[0]  # get element from atom type
+                res_name = split[7] if len(split) > 7 else ""
 
-                elements.append(element)
-                coords.append([x, y, z])
+                het = np.array(
+                    (atom_idx, atom_name, atom_type, element, res_name, np.array([x, y, z])),
+                    dtype=MOL2_HETATM_DTYPES,
+                )
+                hetatm_data.append(het)
 
-    return dict(xyz=np.array(coords), elements=elements)
+    return dict(hetatm=np.array(hetatm_data))
 
 
 HETATM_DTYPES = np.dtype(
