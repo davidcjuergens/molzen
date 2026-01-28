@@ -24,7 +24,7 @@ ncaas = {
 }
 for ncaa in ncaas.keys():
     num2aa.append(ncaa)
-    aa2num[ncaa] = len(num2aa) - 1
+    aa2num[ncaa] = aa2num.index(ncaas[ncaa]["canonical_three_letter"])
 
 # fmt: off
 # full sc atom representation (Nx27)
