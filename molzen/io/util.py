@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Callable, Optional
 
-from molzen.amino_acids import aa2long, aa2num, oneletter_code, ncaas
+from molzen.amino_acids import aa2long, aa2num, oneletter_code, ncaas, num2aa
 from molzen.ptable import ALL_SYMBOLS
 
 
@@ -277,3 +277,63 @@ def parse_pdb(pdb_fp: str):
         xyz.append(cur_xyz)
 
     return dict(xyz=np.array(xyz), seq="".join(seq), hetatm=np.array(hetatm_data))
+
+
+def write_pdb(file_path, xyz, seq, chains=None, hetatm=None):
+    """Write a PDB file from residue-level xyz data.
+
+    Args:
+        file_path: Path to output PDB file.
+        xyz: Array of atomic coords (Nres, 27|14, 3)
+        seq: Amino acid sequence integers (Nres,)
+        chains: Optional list of chain IDs for each residue. If None, all residues will be in chain 'A'.
+        hetatm: Optional array of HETATM entries with dtype HETATM_DTYPES
+    """
+    aa_atom_idx = [
+        {name.strip(): i for i, name in enumerate(long) if name is not None}
+        for long in aa2long
+    ]
+
+    with open(file_path, "w") as f:
+        atom_counter = 1
+        res_counter = 1
+
+        Nres = xyz.shape[0]
+
+        if chains is None:
+            chains = ["A"] * Nres
+
+        for i in range(Nres):
+            res_name = num2aa[aa2num[seq[i]]]
+            chain_id = chains[i]
+            atom_map = aa_atom_idx[aa2num[res_name]]
+
+            for atom_name, atom_idx in atom_map.items():
+                coord = xyz[i, atom_idx]
+                if np.any(np.isnan(coord)):
+                    print(f"Warning: missing coordinate for residue {res_counter} atom {atom_name}, skipping.")
+                    continue  # skip missing atoms
+
+                f.write(
+                    f"ATOM  {atom_counter:5d} {atom_name:>4} {res_name:>3} {chain_id}{res_counter:4d}    "
+                    f"{coord[0]:8.3f}{coord[1]:8.3f}{coord[2]:8.3f}  1.00  0.00           {atom_name[0]:>2}\n"
+                )
+                atom_counter += 1
+
+            res_counter += 1
+
+        if hetatm is not None:
+            for het in hetatm:
+                atom_name = het["atom_name"]
+                res_name = het["res_name"]
+                chain_id = het["chain_id"]
+                res_num = het["res_num"]
+                coord = het["xyz"]
+
+                f.write(
+                    f"HETATM{atom_counter:5d} {atom_name:>4} {res_name:>3} {chain_id}{res_num:4d}    "
+                    f"{coord[0]:8.3f}{coord[1]:8.3f}{coord[2]:8.3f}  1.00  0.00           {atom_name[0]:>2}\n"
+                )
+                atom_counter += 1
+
+        f.write("END\n")
