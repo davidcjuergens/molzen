@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Callable, Optional
 
-from molzen.amino_acids import aa2long, aa2num, oneletter_code
+from molzen.amino_acids import aa2long, aa2num, oneletter_code, ncaas
 from molzen.ptable import ALL_SYMBOLS
 
 
@@ -239,7 +239,12 @@ def parse_pdb(pdb_fp: str):
                     xyz.append(cur_xyz)
 
                 # this will raise a KeyError for non-standard residues
-                seq.append(oneletter_code[res_name])
+                res_oneletter = oneletter_code.get(res_name, None)
+                if res_oneletter is None:
+                    res_oneletter = ncaas.get(res_name, None)["canonical_one_letter"]
+                    if res_oneletter is None:
+                        raise KeyError(f"Unknown residue name: {res_name}")
+                seq.append(res_oneletter)
                 cur_res_id = res_id
                 cur_xyz = np.full((27, 3), np.nan)
 

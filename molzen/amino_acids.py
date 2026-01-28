@@ -6,19 +6,27 @@ oneletter_code = {"ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D",
                   "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K",
                   "MET": "M", "PHE": "F", "PRO": "P", "SER": "S",
                   "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
-                  "UNK": "X", "MAS": "Z", "HID": "?"}
+                  "UNK": "X", "MAS": "Z"}
 
 num2aa=[
     'ALA','ARG','ASN','ASP','CYS',
     'GLN','GLU','GLY','HIS','ILE',
     'LEU','LYS','MET','PHE','PRO',
     'SER','THR','TRP','TYR','VAL',
-    'UNK','MAS','HID',
-    ]
+    'UNK','MAS',
+]
+aa2num = {x: i for i, x in enumerate(num2aa)}
 
-aa2num= {x:i for i,x in enumerate(num2aa)}
-aa2num["HID"] = aa2num["HIS"]
+# fmt: on
+# non-canonical amino acids
+ncaas = {
+    "HID": {"canonical_three_letter": "HIS", "canonical_one_letter": "H"},
+}
+for ncaa in ncaas.keys():
+    num2aa.append(ncaa)
+    aa2num[ncaa] = len(num2aa) - 1
 
+# fmt: off
 # full sc atom representation (Nx27)
 aa2long=[
     (" N  "," CA "," C  "," O  "," CB ",  None,  None,  None,  None,  None,  None,  None,  None,  None," H  "," HA ","1HB ","2HB ","3HB ",  None,  None,  None,  None,  None,  None,  None,  None), # ala
