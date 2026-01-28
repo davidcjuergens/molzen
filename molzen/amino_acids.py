@@ -22,9 +22,9 @@ aa2num = {x: i for i, x in enumerate(num2aa)}
 ncaas = {
     "HID": {"canonical_three_letter": "HIS", "canonical_one_letter": "H"},
 }
-for ncaa in ncaas.keys():
-    num2aa.append(ncaa)
-    aa2num[ncaa] = aa2num.index(ncaas[ncaa]["canonical_three_letter"])
+for nc_name, nc_data in ncaas.items():
+    num2aa.append(nc_name)
+    aa2num[nc_name] = aa2num[nc_data["canonical_three_letter"]]
 
 # fmt: off
 # full sc atom representation (Nx27)
