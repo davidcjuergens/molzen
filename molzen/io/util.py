@@ -304,9 +304,7 @@ def write_pdb(file_path, xyz, seq, chains=None, hetatm=None):
             chains = ["A"] * Nres
 
         for i in range(Nres):
-            res_name = (
-                num2aa[aa2num[seq[i]]] if isinstance(seq[i], str) else aa_1_to_3[seq[i]]
-            )
+            res_name = aa_1_to_3[seq[i]] if isinstance(seq[i], str) else num2aa[seq[i]]
             chain_id = chains[i]
             atom_map = aa_atom_idx[aa2num[res_name]]
 
