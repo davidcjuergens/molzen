@@ -1,4 +1,4 @@
-"""AA bookkeeping utils, copy pasted directly from https://github.com/uw-ipd/RoseTTAFold2/blob/main/network/chemical.py"""
+"""AA bookkeeping utils, adapted from https://github.com/uw-ipd/RoseTTAFold2/blob/main/network/chemical.py"""
 
 # fmt: off
 oneletter_code = {"ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D",
@@ -6,17 +6,18 @@ oneletter_code = {"ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D",
                   "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K",
                   "MET": "M", "PHE": "F", "PRO": "P", "SER": "S",
                   "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
-                  "UNK": "X", "MAS": "Z"}
+                  "UNK": "X", "MAS": "Z", "HID": "?"}
 
 num2aa=[
     'ALA','ARG','ASN','ASP','CYS',
     'GLN','GLU','GLY','HIS','ILE',
     'LEU','LYS','MET','PHE','PRO',
     'SER','THR','TRP','TYR','VAL',
-    'UNK','MAS',
+    'UNK','MAS','HID',
     ]
 
 aa2num= {x:i for i,x in enumerate(num2aa)}
+aa2num["HID"] = aa2num["HIS"]
 
 # full sc atom representation (Nx27)
 aa2long=[
