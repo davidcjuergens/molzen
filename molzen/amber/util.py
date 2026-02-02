@@ -369,6 +369,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         for i, residue in enumerate(residues, start=1):
             if target_atom_set.intersection(_atom_indices(residue)):
                 target_residue_indices.add(i)
+    pdb.set_trace()
     if len(target_atom_indices) == 0:
         return []
 
