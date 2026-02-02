@@ -243,6 +243,12 @@ def generate_samples_uniform(
             print(f"Writing frame {frame_idx} to {filename}")
         outname = os.path.join(out_dir, filename) if out_dir else filename
         pt.write_traj(outname, traj, frame_indices=[frame_idx], overwrite=True)
+        if not os.path.exists(outname):
+            numbered = f"{outname}.1"
+            if os.path.exists(numbered):
+                if verbose:
+                    print(f"Renaming {numbered} -> {outname}")
+                os.replace(numbered, outname)
 
 
 def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, dcut):
