@@ -359,7 +359,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         target_residue_indices = {int(target_residue)}
     else:
         target_mask = str(target_residue)
-        target_atom_indices = pt.select(target_mask, top=top)
+        target_atom_indices = pt.select(target_mask, top)
         if not target_atom_indices:
             raise ValueError(f"No atoms match selection {target_mask!r}")
         target_residue_indices = set()
