@@ -346,7 +346,6 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     traj = pt.load(trajfile, topfile)
     top = traj.topology
     residues = top.residues
-    import pdb; pdb.set_trace()
     def _atom_indices(residue):
         if hasattr(residue, "atom_indices"):
             return list(residue.atom_indices)
@@ -364,16 +363,15 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         target_atom_indices = pt.select(target_mask, top)
         if len(target_atom_indices) == 0:
             raise ValueError(f"No atoms match selection {target_mask!r}")
-        first_atom = top.atom(target_atom_indices[0])
-        target_residue_indices = {first_atom.resid + 1} # Amber 1-indexed residue
-    pdb.set_trace()
-    if len(target_atom_indices) == 0:
-        return []
+        target_residue_indices = {top.atom(idx).resid + 1 for idx in target_atom_indices}
 
     xyz = np.asarray(traj.xyz)
     if xyz.shape[0] != 1:
         raise ValueError(f"Expected a single frame, got {xyz.shape[0]}")
     xyz = xyz[0]
+
+    import pdb; pdb.set_trace()
+
     target_xyz = xyz[target_atom_indices, :]
     dcut2 = float(dcut) ** 2
 
