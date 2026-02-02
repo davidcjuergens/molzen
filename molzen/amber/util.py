@@ -52,7 +52,7 @@ def make_spherical_water_droplet(
     return out_rst7
 
 
-def strip_xe_nobox_prmtop(prmtop_in, prmtop_out, selection=":Xe"):
+def strip_xe_nobox_prmtop(prmtop_in, prmtop_out, selection=":Xe", parmed_path="parmed"):
     """
     Use parmed in non-interactive mode to strip a selection and remove box info.
 
@@ -62,7 +62,7 @@ def strip_xe_nobox_prmtop(prmtop_in, prmtop_out, selection=":Xe"):
         selection (str, optional): ParmEd selection to strip (default ':Xe').
     """
     script = (
-        f"parmed -p {prmtop_in} <<'EOF'\n"
+        f"{parmed_path} -p {prmtop_in} <<'EOF'\n"
         f"strip {selection} nobox\n"
         f"parmout {prmtop_out}\n"
         "quit\n"
