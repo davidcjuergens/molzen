@@ -89,7 +89,7 @@ def strip_xe_nobox_prmtop(
         out_dir = os.path.dirname(prmtop_in) or "."
         fd, temp_out = tempfile.mkstemp(suffix=".prmtop", dir=out_dir)
         # remove it so parmed can write to it w/o complaining that it exists
-        os.close(fd) 
+        os.close(fd)
         os.remove(temp_out)
         prmtop_out_path = temp_out
     else:
@@ -277,12 +277,18 @@ def reionize_single_frame(
         os.remove(rst7)
     if delete_intermediate_pdb:
         os.remove(out_pdb)
-    
+
     return out_pdb, out_prmtop, out_rst7
 
 
 def generate_samples_uniform(
-    topfile, trajfile, n_samples, random_seed=None, outformat="rst7", out_dir=None, verbose=False
+    topfile,
+    trajfile,
+    n_samples,
+    random_seed=None,
+    outformat="rst7",
+    out_dir=None,
+    verbose=False,
 ):
     """
     Sample n_samples frames uniformly from the trajectory and save them to disk.
@@ -346,11 +352,14 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     traj = pt.load(trajfile, topfile)
     top = traj.topology
     residues = top.residues
+
     def _atom_indices(residue):
         if hasattr(residue, "atom_indices"):
             return list(residue.atom_indices)
         if hasattr(residue, "first_atom_index") and hasattr(residue, "last_atom_index"):
-            return list(range(residue.first_atom_index, residue.last_atom_index + 1))
+            return list(
+                range(residue.first_atom_index, residue.last_atom_index)
+            )  # not +1 because last_atom_index is exclusive
         raise AttributeError("Residue object does not expose atom indices")
 
     if isinstance(target_residue, numbers.Integral):
@@ -363,14 +372,14 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         target_atom_indices = pt.select(target_mask, top)
         if len(target_atom_indices) == 0:
             raise ValueError(f"No atoms match selection {target_mask!r}")
-        target_residue_indices = {top.atom(idx).resid + 1 for idx in target_atom_indices}
+        target_residue_indices = {
+            top.atom(idx).resid + 1 for idx in target_atom_indices
+        }
 
     xyz = np.asarray(traj.xyz)
     if xyz.shape[0] != 1:
         raise ValueError(f"Expected a single frame, got {xyz.shape[0]}")
     xyz = xyz[0]
-
-    import pdb; pdb.set_trace()
 
     target_xyz = xyz[target_atom_indices, :]
     dcut2 = float(dcut) ** 2
@@ -382,11 +391,9 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         atom_indices = _atom_indices(residue)
         if len(atom_indices) == 0:
             continue
-        
-        try:
-            res_xyz = xyz[atom_indices, :]
-        except IndexError:
-            pdb.set_trace()
+
+        res_xyz = xyz[atom_indices, :]
+
         diff = res_xyz[:, None, :] - target_xyz[None, :, :]
         dist2 = np.sum(diff * diff, axis=-1)
         if np.min(dist2) <= dcut2:
