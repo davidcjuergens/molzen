@@ -58,6 +58,7 @@ def strip_xe_nobox_prmtop(
     selection=":Xe",
     parmed_path="parmed",
     amber_module=None,
+    verbose=False,
 ):
     """
     Use parmed in non-interactive mode to strip a selection and remove box info.
@@ -68,19 +69,30 @@ def strip_xe_nobox_prmtop(
         selection (str, optional): ParmEd selection to strip (default ':Xe').
         parmed_path (str, optional): Path to parmed executable.
         amber_module (str, optional): Module name to load before running parmed.
+        verbose (bool, optional): If True, print the parmed command.
     """
     script = (
-        f"{parmed_path} -p {prmtop_in} <<'EOF'\n"
         f"strip {selection} nobox\n"
         f"parmout {prmtop_out}\n"
         "quit\n"
-        "EOF\n"
     )
-    if amber_module:
-        cmd = f"module load {amber_module} && {script}"
-        subprocess.run(["bash", "-lc", cmd], check=True, text=True)
-    else:
-        subprocess.run(script, shell=True, check=True, text=True)
+    with tempfile.NamedTemporaryFile("w", suffix=".in", delete=False) as handle:
+        handle.write(script)
+        script_path = handle.name
+
+    try:
+        if amber_module:
+            cmd = f"module load {amber_module} && {parmed_path} -p {prmtop_in} -i {script_path}"
+            if verbose:
+                print(f"Running: bash -lc {cmd!r}")
+            subprocess.run(["bash", "-lc", cmd], check=True, text=True)
+        else:
+            cmd = [parmed_path, "-p", prmtop_in, "-i", script_path]
+            if verbose:
+                print(f"Running: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True, text=True)
+    finally:
+        os.remove(script_path)
 
 
 def strip_ions_to_pdb(
