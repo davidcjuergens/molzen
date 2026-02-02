@@ -13,6 +13,7 @@ def make_spherical_water_droplet(
     parmout_path=None,
     cpptraj_path="cpptraj",
     delete_input_rst7=False,
+    amber_module=None,
 ):
     """
     Use cpptraj to build a spherical droplet by keeping the closest n_closest solvent
@@ -26,6 +27,7 @@ def make_spherical_water_droplet(
         parmout_path (str, optional): If provided, write a prmtop for the droplet.
         cpptraj_path (str, optional): Path to cpptraj executable.
         delete_input_rst7 (bool, optional): If True, delete the input rst7 after success.
+        amber_module (str, optional): Module name to load before running cpptraj.
     Returns:
         str: Path to the output rst7 file.
     """
@@ -50,7 +52,11 @@ def make_spherical_water_droplet(
     lines.append("quit")
 
     cpptraj_input = "\n".join(lines) + "\n"
-    subprocess.run([cpptraj_path], input=cpptraj_input, text=True, check=True)
+    if amber_module:
+        cmd = f"module load {amber_module} && {cpptraj_path}"
+        subprocess.run(["bash", "-lc", cmd], input=cpptraj_input, text=True, check=True)
+    else:
+        subprocess.run([cpptraj_path], input=cpptraj_input, text=True, check=True)
     if delete_input_rst7:
         os.remove(rst7)
     return out_rst7
@@ -99,7 +105,12 @@ def strip_xe_nobox_prmtop(
 
 
 def strip_ions_to_pdb(
-    prmtop, rst7, out_pdb=None, ions=(":Cl-", ":Na+"), cpptraj_path="cpptraj"
+    prmtop,
+    rst7,
+    out_pdb=None,
+    ions=(":Cl-", ":Na+"),
+    cpptraj_path="cpptraj",
+    amber_module=None,
 ):
     """
     Use cpptraj to strip ions from a single-frame rst7 and write a PDB.
@@ -110,6 +121,7 @@ def strip_ions_to_pdb(
         out_pdb (str, optional): Output PDB path. Defaults to <rst7>_noions.pdb.
         ions (Sequence[str], optional): cpptraj selections for ions to strip.
         cpptraj_path (str, optional): Path to cpptraj executable.
+        amber_module (str, optional): Module name to load before running cpptraj.
     Returns:
         str: Path to the output PDB file.
     """
@@ -128,7 +140,11 @@ def strip_ions_to_pdb(
     lines.append("quit")
 
     cpptraj_input = "\n".join(lines) + "\n"
-    subprocess.run([cpptraj_path], input=cpptraj_input, text=True, check=True)
+    if amber_module:
+        cmd = f"module load {amber_module} && {cpptraj_path}"
+        subprocess.run(["bash", "-lc", cmd], input=cpptraj_input, text=True, check=True)
+    else:
+        subprocess.run([cpptraj_path], input=cpptraj_input, text=True, check=True)
     return out_pdb
 
 
@@ -142,6 +158,7 @@ def add_ions_with_tleap(
     frcmod_path=None,
     ligand_name="LIG",
     tleap_path="tleap",
+    amber_module=None,
 ):
     """
     Use tleap to add ions to a PDB and write prmtop/rst7.
@@ -156,6 +173,7 @@ def add_ions_with_tleap(
         frcmod_path (str, optional): Ligand frcmod to load.
         ligand_name (str, optional): Ligand name for loadmol2.
         tleap_path (str, optional): Path to tleap executable.
+        amber_module (str, optional): Module name to load before running tleap.
     """
     lines = []
     for rc in leaprcs:
@@ -178,7 +196,11 @@ def add_ions_with_tleap(
         script_path = handle.name
 
     try:
-        subprocess.run([tleap_path, "-f", script_path], check=True, text=True)
+        if amber_module:
+            cmd = f"module load {amber_module} && {tleap_path} -f {script_path}"
+            subprocess.run(["bash", "-lc", cmd], check=True, text=True)
+        else:
+            subprocess.run([tleap_path, "-f", script_path], check=True, text=True)
     finally:
         os.remove(script_path)
 
@@ -197,6 +219,7 @@ def reionize_single_frame(
     ligand_name="LIG",
     cpptraj_path="cpptraj",
     tleap_path="tleap",
+    amber_module=None,
 ):
     """
     Strip existing ions with cpptraj, then re-add ions with tleap.
@@ -217,6 +240,7 @@ def reionize_single_frame(
         out_pdb=out_pdb,
         ions=strip_ion_selections,
         cpptraj_path=cpptraj_path,
+        amber_module=amber_module,
     )
     add_ions_with_tleap(
         out_pdb,
@@ -228,6 +252,7 @@ def reionize_single_frame(
         frcmod_path=frcmod_path,
         ligand_name=ligand_name,
         tleap_path=tleap_path,
+        amber_module=amber_module,
     )
     return out_pdb, out_prmtop, out_rst7
 
