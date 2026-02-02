@@ -79,6 +79,12 @@ def strip_xe_nobox_prmtop(
     with tempfile.NamedTemporaryFile("w", suffix=".in", delete=False) as handle:
         handle.write(script)
         script_path = handle.name
+    
+    # double check script contents
+    if verbose:
+        with open(script_path, "r") as f:
+            print("ParmEd script contents:")
+            print(f.read())
 
     try:
         if amber_module:
@@ -92,7 +98,8 @@ def strip_xe_nobox_prmtop(
                 print(f"Running: {' '.join(cmd)}")
             subprocess.run(cmd, check=True, text=True)
     finally:
-        os.remove(script_path)
+        # os.remove(script_path)
+        pass # for now, debugging
 
 
 def strip_ions_to_pdb(
