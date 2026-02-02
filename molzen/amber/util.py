@@ -72,34 +72,22 @@ def strip_xe_nobox_prmtop(
         verbose (bool, optional): If True, print the parmed command.
     """
     script = (
+        f"{parmed_path} -p {prmtop_in} <<'EOF'\n"
         f"strip {selection} nobox\n"
         f"parmout {prmtop_out}\n"
+        "go\n"
         "quit\n"
+        "EOF\n"
     )
-    with tempfile.NamedTemporaryFile("w", suffix=".in", delete=False) as handle:
-        handle.write(script)
-        script_path = handle.name
-    
-    # double check script contents
-    if verbose:
-        with open(script_path, "r") as f:
-            print("ParmEd script contents:")
-            print(f.read())
-
-    try:
-        if amber_module:
-            cmd = f"module load {amber_module} && {parmed_path} -p {prmtop_in} -i {script_path}"
-            if verbose:
-                print(f"Running: bash -lc {cmd!r}")
-            subprocess.run(["bash", "-lc", cmd], check=True, text=True)
-        else:
-            cmd = [parmed_path, "-p", prmtop_in, "-i", script_path]
-            if verbose:
-                print(f"Running: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True, text=True)
-    finally:
-        # os.remove(script_path)
-        pass # for now, debugging
+    if amber_module:
+        cmd = f"module load {amber_module} && {script}"
+        if verbose:
+            print(f"Running: bash -lc {cmd!r}")
+        subprocess.run(["bash", "-lc", cmd], check=True, text=True)
+    else:
+        if verbose:
+            print(f"Running: {script}")
+        subprocess.run(script, shell=True, check=True, text=True)
 
 
 def strip_ions_to_pdb(
