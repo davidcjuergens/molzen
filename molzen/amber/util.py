@@ -334,7 +334,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     Args:
         topfile (str): Path to the topology file.
         trajfile (str): Path to the trajectory file.
-        target_residue (int): The residue number to measure distances from (1-indexed).
+        target_residue (int or str): Residue number (1-indexed) or mask (e.g., ':133' or ':JF4').
         dcut (float): The distance cutoff in Angstroms.
     Returns:
         List[int]: List of 1-indexed residue numbers within distance_cut of target_residue.
@@ -346,15 +346,25 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     top = traj.topology
     residues = top.residues
 
-    if target_residue < 1 or target_residue > len(residues):
-        raise ValueError(f"target_residue must be between 1 and {len(residues)}")
-
     def _atom_indices(residue):
         if hasattr(residue, "atom_indices"):
             return list(residue.atom_indices)
         return [getattr(atom, "idx", getattr(atom, "index")) for atom in residue.atoms]
 
-    target_atom_indices = _atom_indices(residues[target_residue - 1])
+    if isinstance(target_residue, str):
+        target_atom_indices = pt.select(target_residue, top=top)
+        if not target_atom_indices:
+            raise ValueError(f"No atoms match selection {target_residue!r}")
+        target_residue_indices = set()
+        target_atom_set = set(target_atom_indices)
+        for i, residue in enumerate(residues, start=1):
+            if target_atom_set.intersection(_atom_indices(residue)):
+                target_residue_indices.add(i)
+    else:
+        if target_residue < 1 or target_residue > len(residues):
+            raise ValueError(f"target_residue must be between 1 and {len(residues)}")
+        target_atom_indices = _atom_indices(residues[target_residue - 1])
+        target_residue_indices = {target_residue}
     if not target_atom_indices:
         return []
 
@@ -367,7 +377,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
 
     residues_within = []
     for i, residue in enumerate(residues, start=1):
-        if i == target_residue:
+        if i in target_residue_indices:
             continue
         atom_indices = _atom_indices(residue)
         if not atom_indices:
