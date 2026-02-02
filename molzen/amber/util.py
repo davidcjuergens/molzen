@@ -382,8 +382,11 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         atom_indices = _atom_indices(residue)
         if len(atom_indices) == 0:
             continue
-
-        res_xyz = xyz[atom_indices, :]
+        
+        try:
+            res_xyz = xyz[atom_indices, :]
+        except IndexError:
+            pdb.set_trace()
         diff = res_xyz[:, None, :] - target_xyz[None, :, :]
         dist2 = np.sum(diff * diff, axis=-1)
         if np.min(dist2) <= dcut2:
