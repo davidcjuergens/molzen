@@ -59,6 +59,7 @@ def strip_xe_nobox_prmtop(
     parmed_path="parmed",
     amber_module=None,
     verbose=False,
+    delete_prmtop_in=False,
 ):
     """
     Use parmed in non-interactive mode to strip a selection and remove box info.
@@ -70,6 +71,7 @@ def strip_xe_nobox_prmtop(
         parmed_path (str, optional): Path to parmed executable.
         amber_module (str, optional): Module name to load before running parmed.
         verbose (bool, optional): If True, print the parmed command.
+        delete_prmtop_in (bool, optional): If True, delete prmtop_in after success.
     """
     script = (
         f"{parmed_path} -p {prmtop_in} <<'EOF'\n"
@@ -88,6 +90,8 @@ def strip_xe_nobox_prmtop(
         if verbose:
             print(f"Running: {script}")
         subprocess.run(script, shell=True, check=True, text=True)
+    if delete_prmtop_in:
+        os.remove(prmtop_in)
 
 
 def strip_ions_to_pdb(
