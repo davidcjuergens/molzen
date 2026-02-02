@@ -64,7 +64,7 @@ def make_spherical_water_droplet(
 
 def strip_xe_nobox_prmtop(
     prmtop_in,
-    prmtop_out,
+    prmtop_out=None,
     selection=":Xe",
     parmed_path="parmed",
     amber_module=None,
@@ -76,17 +76,26 @@ def strip_xe_nobox_prmtop(
 
     Args:
         prmtop_in (str): Input prmtop path.
-        prmtop_out (str): Output prmtop path.
+        prmtop_out (str, optional): Output prmtop path. If None, overwrite prmtop_in.
         selection (str, optional): ParmEd selection to strip (default ':Xe').
         parmed_path (str, optional): Path to parmed executable.
         amber_module (str, optional): Module name to load before running parmed.
         verbose (bool, optional): If True, print the parmed command.
         delete_prmtop_in (bool, optional): If True, delete prmtop_in after success.
     """
+    overwrite_in_place = prmtop_out is None or prmtop_out == prmtop_in
+    if overwrite_in_place:
+        out_dir = os.path.dirname(prmtop_in) or "."
+        fd, temp_out = tempfile.mkstemp(suffix=".prmtop", dir=out_dir)
+        os.close(fd)
+        prmtop_out_path = temp_out
+    else:
+        prmtop_out_path = prmtop_out
+
     script = (
         f"{parmed_path} -p {prmtop_in} <<'EOF'\n"
         f"strip {selection} nobox\n"
-        f"parmout {prmtop_out}\n"
+        f"parmout {prmtop_out_path}\n"
         "go\n"
         "quit\n"
         "EOF\n"
@@ -100,7 +109,9 @@ def strip_xe_nobox_prmtop(
         if verbose:
             print(f"Running: {script}")
         subprocess.run(script, shell=True, check=True, text=True)
-    if delete_prmtop_in:
+    if overwrite_in_place:
+        os.replace(prmtop_out_path, prmtop_in)
+    elif delete_prmtop_in:
         os.remove(prmtop_in)
 
 
