@@ -1,4 +1,5 @@
 import os
+import numbers
 import subprocess
 import tempfile
 import numpy as np
@@ -351,20 +352,21 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
             return list(residue.atom_indices)
         return [getattr(atom, "idx", getattr(atom, "index")) for atom in residue.atoms]
 
-    if isinstance(target_residue, str):
-        target_atom_indices = pt.select(target_residue, top=top)
+    if isinstance(target_residue, numbers.Integral):
+        if target_residue < 1 or target_residue > len(residues):
+            raise ValueError(f"target_residue must be between 1 and {len(residues)}")
+        target_atom_indices = _atom_indices(residues[target_residue - 1])
+        target_residue_indices = {int(target_residue)}
+    else:
+        target_mask = str(target_residue)
+        target_atom_indices = pt.select(target_mask, top=top)
         if not target_atom_indices:
-            raise ValueError(f"No atoms match selection {target_residue!r}")
+            raise ValueError(f"No atoms match selection {target_mask!r}")
         target_residue_indices = set()
         target_atom_set = set(target_atom_indices)
         for i, residue in enumerate(residues, start=1):
             if target_atom_set.intersection(_atom_indices(residue)):
                 target_residue_indices.add(i)
-    else:
-        if target_residue < 1 or target_residue > len(residues):
-            raise ValueError(f"target_residue must be between 1 and {len(residues)}")
-        target_atom_indices = _atom_indices(residues[target_residue - 1])
-        target_residue_indices = {target_residue}
     if not target_atom_indices:
         return []
 
