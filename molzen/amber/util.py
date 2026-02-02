@@ -341,7 +341,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     Args:
         topfile (str): Path to the topology file.
         trajfile (str): Path to the trajectory file.
-        target_residue (int or str): Residue number (1-indexed) or mask (e.g., ':133' or ':JF4').
+        target_residue (str): Residue mask (e.g., ':133' or ':JF4').
         dcut (float): The distance cutoff in Angstroms.
     Returns:
         List[int]: List of 1-indexed residue numbers within distance_cut of target_residue.
@@ -362,19 +362,19 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
             )  # not +1 because last_atom_index is exclusive
         raise AttributeError("Residue object does not expose atom indices")
 
-    if isinstance(target_residue, numbers.Integral):
-        if target_residue < 1 or target_residue > len(residues):
-            raise ValueError(f"target_residue must be between 1 and {len(residues)}")
-        target_atom_indices = _atom_indices(residues[target_residue - 1])
-        target_residue_indices = {int(target_residue)}
-    else:
-        target_mask = str(target_residue)
-        target_atom_indices = pt.select(target_mask, top)
-        if len(target_atom_indices) == 0:
-            raise ValueError(f"No atoms match selection {target_mask!r}")
-        target_residue_indices = {
-            top.atom(idx).resid + 1 for idx in target_atom_indices
-        }
+    assert isinstance(target_residue, str)
+    target_mask = str(target_residue)
+    target_atom_indices = pt.select(target_mask, top)
+    if len(target_atom_indices) == 0:
+        raise ValueError(f"No atoms match selection {target_mask!r}")
+    target_residue_indices = {
+        top.atom(idx).resid + 1 for idx in target_atom_indices
+    }
+    # assert that all atoms belong to the same residue
+    for idx in target_atom_indices:
+        res_idx = top.atom(idx).resid + 1
+        if res_idx not in target_residue_indices:
+            raise ValueError(f"Selection {target_mask!r} spans multiple residues")
 
     xyz = np.asarray(traj.xyz)
     if xyz.shape[0] != 1:
