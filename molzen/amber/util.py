@@ -350,7 +350,9 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     def _atom_indices(residue):
         if hasattr(residue, "atom_indices"):
             return list(residue.atom_indices)
-        return [getattr(atom, "idx", getattr(atom, "index")) for atom in residue.atoms]
+        if hasattr(residue, "first_atom_index") and hasattr(residue, "last_atom_index"):
+            return list(range(residue.first_atom_index, residue.last_atom_index + 1))
+        raise AttributeError("Residue object does not expose atom indices")
 
     if isinstance(target_residue, numbers.Integral):
         if target_residue < 1 or target_residue > len(residues):
