@@ -364,11 +364,8 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         target_atom_indices = pt.select(target_mask, top)
         if len(target_atom_indices) == 0:
             raise ValueError(f"No atoms match selection {target_mask!r}")
-        target_residue_indices = set()
-        target_atom_set = set(target_atom_indices)
-        for i, residue in enumerate(residues, start=1):
-            if target_atom_set.intersection(_atom_indices(residue)):
-                target_residue_indices.add(i)
+        first_atom = top.atom(target_atom_indices[0])
+        target_residue_indices = {first_atom.resid + 1} # Amber 1-indexed residue
     pdb.set_trace()
     if len(target_atom_indices) == 0:
         return []
