@@ -87,7 +87,9 @@ def strip_xe_nobox_prmtop(
     if overwrite_in_place:
         out_dir = os.path.dirname(prmtop_in) or "."
         fd, temp_out = tempfile.mkstemp(suffix=".prmtop", dir=out_dir)
-        os.close(fd)
+        # remove it so parmed can write to it w/o complaining that it exists
+        os.close(fd) 
+        os.remove(temp_out)
         prmtop_out_path = temp_out
     else:
         prmtop_out_path = prmtop_out
