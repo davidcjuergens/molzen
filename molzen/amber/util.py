@@ -52,7 +52,13 @@ def make_spherical_water_droplet(
     return out_rst7
 
 
-def strip_xe_nobox_prmtop(prmtop_in, prmtop_out, selection=":Xe", parmed_path="parmed"):
+def strip_xe_nobox_prmtop(
+    prmtop_in,
+    prmtop_out,
+    selection=":Xe",
+    parmed_path="parmed",
+    amber_module=None,
+):
     """
     Use parmed in non-interactive mode to strip a selection and remove box info.
 
@@ -60,6 +66,8 @@ def strip_xe_nobox_prmtop(prmtop_in, prmtop_out, selection=":Xe", parmed_path="p
         prmtop_in (str): Input prmtop path.
         prmtop_out (str): Output prmtop path.
         selection (str, optional): ParmEd selection to strip (default ':Xe').
+        parmed_path (str, optional): Path to parmed executable.
+        amber_module (str, optional): Module name to load before running parmed.
     """
     script = (
         f"{parmed_path} -p {prmtop_in} <<'EOF'\n"
@@ -68,7 +76,11 @@ def strip_xe_nobox_prmtop(prmtop_in, prmtop_out, selection=":Xe", parmed_path="p
         "quit\n"
         "EOF\n"
     )
-    subprocess.run(script, shell=True, check=True, text=True)
+    if amber_module:
+        cmd = f"module load {amber_module} && {script}"
+        subprocess.run(["bash", "-lc", cmd], check=True, text=True)
+    else:
+        subprocess.run(script, shell=True, check=True, text=True)
 
 
 def strip_ions_to_pdb(
