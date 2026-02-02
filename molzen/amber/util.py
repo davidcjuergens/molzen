@@ -204,7 +204,7 @@ def reionize_single_frame(
 
 
 def generate_samples_uniform(
-    topfile, trajfile, n_samples, random_seed=None, outformat="rst7"
+    topfile, trajfile, n_samples, random_seed=None, outformat="rst7", out_dir=None
 ):
     """
     Sample n_samples frames uniformly from the trajectory and save them to disk.
@@ -215,6 +215,7 @@ def generate_samples_uniform(
         n_samples (int): Number of frames to sample.
         random_seed (int, optional): Random seed for reproducibility
         outformat (str, optional): Output format for the sampled frames. Default is "rst7".
+        out_dir (str, optional): Output directory for sampled frames. Defaults to CWD.
     """
     if n_samples < 1:
         raise ValueError("n_samples must be >= 1")
@@ -232,8 +233,11 @@ def generate_samples_uniform(
 
     base = os.path.splitext(os.path.basename(trajfile))[0]
     ext = outformat.lstrip(".")
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     for i, frame_idx in enumerate(indices, start=1):
-        outname = f"{base}_sample_{i:03d}.{ext}"
+        filename = f"{base}_sample_{i:03d}.{ext}"
+        outname = os.path.join(out_dir, filename) if out_dir else filename
         pt.write_traj(outname, traj, frame_indices=[frame_idx], overwrite=True)
 
 
