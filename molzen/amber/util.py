@@ -369,7 +369,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         for i, residue in enumerate(residues, start=1):
             if target_atom_set.intersection(_atom_indices(residue)):
                 target_residue_indices.add(i)
-    if not target_atom_indices:
+    if len(target_atom_indices) == 0:
         return []
 
     xyz = np.asarray(traj.xyz)
@@ -384,7 +384,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
         if i in target_residue_indices:
             continue
         atom_indices = _atom_indices(residue)
-        if not atom_indices:
+        if len(atom_indices) == 0:
             continue
 
         res_xyz = xyz[atom_indices, :]
