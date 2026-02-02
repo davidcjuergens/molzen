@@ -12,6 +12,7 @@ def make_spherical_water_droplet(
     solute_sel,
     parmout_path=None,
     cpptraj_path="cpptraj",
+    delete_input_rst7=False,
 ):
     """
     Use cpptraj to build a spherical droplet by keeping the closest n_closest solvent
@@ -24,6 +25,7 @@ def make_spherical_water_droplet(
         solute_sel (str): cpptraj selection for solute.
         parmout_path (str, optional): If provided, write a prmtop for the droplet.
         cpptraj_path (str, optional): Path to cpptraj executable.
+        delete_input_rst7 (bool, optional): If True, delete the input rst7 after success.
     Returns:
         str: Path to the output rst7 file.
     """
@@ -49,6 +51,8 @@ def make_spherical_water_droplet(
 
     cpptraj_input = "\n".join(lines) + "\n"
     subprocess.run([cpptraj_path], input=cpptraj_input, text=True, check=True)
+    if delete_input_rst7:
+        os.remove(rst7)
     return out_rst7
 
 
