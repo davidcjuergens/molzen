@@ -221,6 +221,8 @@ def reionize_single_frame(
     tleap_path="tleap",
     amber_module=None,
     delete_prmtop_in=False,
+    delete_rst7_in=False,
+    delete_intermediate_pdb=False,
 ):
     """
     Strip existing ions with cpptraj, then re-add ions with tleap.
@@ -257,6 +259,11 @@ def reionize_single_frame(
     )
     if delete_prmtop_in:
         os.remove(prmtop)
+    if delete_rst7_in:
+        os.remove(rst7)
+    if delete_intermediate_pdb:
+        os.remove(out_pdb)
+    
     return out_pdb, out_prmtop, out_rst7
 
 
