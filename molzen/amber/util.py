@@ -1,5 +1,5 @@
 import os
-import numbers
+import glob
 import subprocess
 import tempfile
 import numpy as np
@@ -401,3 +401,98 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
 
     # 1-indexed residues
     return residues_within
+
+def prepare_spherical_frames(
+    traj: str,
+    prmtop: str,
+    target_mask: str,
+    n_closest_solvent: int,
+    num_samples: int,
+    output_dir: str,
+    add_ions=[("Na+", 0), ("Cl-", 0)],
+    ligand_mol2: str = None,
+    ligand_frcmod: str = None,
+    ligand_name: str = None,
+    cpptraj_path: str = "cpptraj",
+    amber_module: str = "Amber/24-CUDA-12.2.1",
+    verbose: bool = False,
+) -> None:
+    """
+    From a production Amber trajectory, randomly sample and prepare spherical capped frames.
+    Usually used for preparing frames for TeraChem after running Amber MD.
+
+    Args:
+        traj (str): Path to the Amber trajectory file.
+        prmtop (str): Path to the Amber prmtop file.
+        target_mask (str): Residue selection mask to select sphere center (e.g., ":JF4").
+        n_closest_solvent (int): Number of closest solvent molecules to retain around the target.
+        num_samples (int): Number of random frames to sample uniformly from the trajectory.
+        output_dir (str): Directory to save the prepared spherical capped frames.
+        add_ions (list of tuples): List of tuples specifying ions to add and their counts, e.g., [("Na+", 0), ("Cl-", 0)].
+                                   A count of 0 means to neutralize the system regardless of how many it takes.
+        ligand_mol2 (str): Path to the ligand mol2 file.
+        ligand_frcmod (str): Path to the ligand frcmod file.
+        cpptraj_path (str): Path to the cpptraj executable.
+        amber_module (str): Amber module to load for Amber tools.
+        verbose (bool): Whether to print verbose output.
+    """
+
+    # 1. Uniformly sample N frames from the trajectory
+    generate_samples_uniform(
+        topfile=prmtop,
+        trajfile=traj,
+        n_samples=num_samples,
+        out_dir=output_dir,
+        verbose=verbose,
+    )
+
+    # 2. Create spherical droplets
+    # TODO: probably should return the list of generated rst7s from previous step
+    rst7s = glob.glob(os.path.join(output_dir, "*.rst7"))
+    for rst7 in rst7s:
+        make_spherical_water_droplet(
+            prmtop=prmtop,
+            rst7=rst7,
+            solute_sel=target_mask,
+            n_closest=n_closest_solvent,
+            parmout_path=rst7.replace(".rst7", "_sphere.prmtop"),
+            cpptraj_path=cpptraj_path,
+            delete_input_rst7=True,
+        )
+
+    # 3. Remove periodic box information from prmtop files
+    # TODO: probably should return the list of generated sphere prmtops from previous step
+    sphere_prmtops = glob.glob(os.path.join(output_dir, "*_sphere.prmtop"))
+    sphere_rst7s = [s.replace(".prmtop", ".rst7") for s in sphere_prmtops]
+
+    for prmtop, rst7 in zip(sphere_prmtops, sphere_rst7s):
+        strip_xe_nobox_prmtop(
+            prmtop_in=prmtop,
+            prmtop_out=None,
+            amber_module=amber_module,
+            verbose=verbose,
+            delete_prmtop_in=True,
+        )
+
+    # 4. Remove ions remaining in the sphere,
+    #    then put ions back in using tleap to once again balance charges
+    nobox_prmtops = sphere_prmtops
+    nobox_rst7s = [s.replace(".prmtop", ".rst7") for s in nobox_prmtops]
+
+    for prmtop, rst7 in zip(nobox_prmtops, nobox_rst7s):
+        prmtop_out = prmtop.replace("_sphere.prmtop", "_sphere_reionized.prmtop")
+        rst7_out = rst7.replace("_sphere.rst7", "_sphere_reionized.rst7")
+        reionize_single_frame(
+            prmtop=prmtop,
+            rst7=rst7,
+            out_rst7=rst7_out,
+            ions=add_ions,
+            out_prmtop=prmtop_out,
+            mol2_path=ligand_mol2,
+            frcmod_path=ligand_frcmod,
+            ligand_name=ligand_name,
+            amber_module=amber_module,
+            delete_prmtop_in=True,
+            delete_rst7_in=True,
+            delete_intermediate_pdb=True,
+        )
