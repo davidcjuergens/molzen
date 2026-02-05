@@ -28,7 +28,13 @@ def make_terachem_input(
     """
 
     # make scr dir
-    prefix = os.path.basename(xyz_path).replace(".xyz", "")
+    suffixes_to_remove = (".xyz", ".rst7")
+    prefix = os.path.basename(xyz_path)
+    for suffix in suffixes_to_remove:
+        if prefix.endswith(suffix):
+            prefix = prefix[: -len(suffix)]
+            break
+
     if tag is not None:
         prefix = f"{prefix}_{tag}"
 
@@ -86,7 +92,8 @@ def make_terachem_job_array(
         tags: optional list of tags to attach to scr dirs and output files
         terachem_exec: terachem executable command
         clobber: whether to overwrite existing files
-        constraint_lists: optional list of constraint lists. if tc_kwargs is a dict, this should be only one list of constraints. If tc_kwargs is a list of dicts, this should be a list of lists of constraints, one per job.
+        constraint_lists: optional list of constraint lists. if tc_kwargs is a dict, this should be only one list of constraints.
+                          If tc_kwargs is a list of dicts, this should be a list of lists of constraints, one per job.
     """
     if constraint_lists is not None:
         if isinstance(tc_kwargs, list):
@@ -112,6 +119,7 @@ def make_terachem_job_array(
     os.makedirs(tc_input_dir, exist_ok=True)
     one_liners = []
 
+    log_paths = []
     for i, xyz in enumerate(xyzs):
         tag = None
         if tags is not None:
@@ -135,6 +143,14 @@ def make_terachem_job_array(
         # make one liner to run terachem for this input
         one_liner = f"{terachem_executable} {input_path} > {log_path} 2>&1"
         one_liners.append(one_liner)
+
+        # track log paths to ensure we don't have any collisions
+        log_paths.append(log_path)
+
+    # ensure no log path collisions
+    assert len(log_paths) == len(set(log_paths)), (
+        "Log path collisions detected, please supply manual tags to disambiguate"
+    )
 
     # write out jobs to a task array
     tasks_file = os.path.join(workdir, task_filename)
