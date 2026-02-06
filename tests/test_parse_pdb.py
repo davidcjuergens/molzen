@@ -12,10 +12,10 @@ def test_parse_1prw():
 
     out = parse_pdb(pdb_file)
 
-    xyz = out["xyz"]  # (Nres, 14, 3)
+    xyz = out["xyz"]  # (Nres, 27, 3)
     seq = out["seq"]  # (Nres, )
 
-    assert xyz.shape == (147, 14, 3)
+    assert xyz.shape == (147, 27, 3)
     assert len(seq) == 147
 
     assert seq[21] == "D"
