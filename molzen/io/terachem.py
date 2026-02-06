@@ -38,6 +38,13 @@ def make_terachem_input(
     if tag is not None:
         prefix = f"{prefix}_{tag}"
 
+    # ensure there is no capitalization in the prefix, since terachem silently converts to lowercase...
+    if any([c.isupper() for c in prefix]):
+        print(
+            f"WARNING: prefix {prefix} contains uppercase letters. Converting to lowercase"
+        )
+        prefix = prefix.lower()
+
     # make sure we didn't accidentally think it was going to be some other scrdir
     assert tc_kwargs.get("scrdir") is None
     assert tc_kwargs.get("coordinates") is None
