@@ -2,6 +2,7 @@
 
 from molzen.ptable import symbol_to_z
 
+
 def get_atomic_number(element: str) -> int:
     """Get the atomic number for a given element symbol.
 
@@ -10,4 +11,3 @@ def get_atomic_number(element: str) -> int:
     """
     element = element.capitalize()
     return symbol_to_z[element]
-

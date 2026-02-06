@@ -367,9 +367,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
     target_atom_indices = pt.select(target_mask, top)
     if len(target_atom_indices) == 0:
         raise ValueError(f"No atoms match selection {target_mask!r}")
-    target_residue_indices = {
-        top.atom(idx).resid + 1 for idx in target_atom_indices
-    }
+    target_residue_indices = {top.atom(idx).resid + 1 for idx in target_atom_indices}
     # assert that all atoms belong to the same residue
     for idx in target_atom_indices:
         res_idx = top.atom(idx).resid + 1
@@ -401,6 +399,7 @@ def get_residues_within_distance_singleframe(topfile, trajfile, target_residue, 
 
     # 1-indexed residues
     return residues_within
+
 
 def prepare_spherical_frames(
     traj: str,

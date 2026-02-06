@@ -5,7 +5,9 @@ import numpy as np
 
 
 def parse_terachem_output(
-    file_path: str, custom_section_parsers: Union[None, dict] = None, raw_str_in:bool = False
+    file_path: str,
+    custom_section_parsers: Union[None, dict] = None,
+    raw_str_in: bool = False,
 ) -> dict:
     """
     Parse a terachem output file and return relevant data.
