@@ -8,4 +8,9 @@ dependencies = [
     "matplotlib>=3.10.8",
     "numpy>=2.2.6",
     "pytest>=9.0.2",
+    "ruff>=0.9.3",
 ]
+
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
