@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  tests:
+  molzen_uv_build_test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
