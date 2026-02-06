@@ -17,6 +17,8 @@ actinoids = "Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr"
 p72 = "Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og"
 p7 = f"{p71} {actinoids} {p72}"
 
-ALL_SYMBOLS = f"{p1} {p2} {p3} {p4} {p5} {p6} {p7}".split() # list of all elements
-symbol_to_z = {symbol: idx + 1 for idx, symbol in enumerate(ALL_SYMBOLS)}  # map element symbol to atomic number
-z_to_symbol = {v: k for k, v in symbol_to_z.items()}  # map atomic number to element symbol
+ALL_SYMBOLS = f"{p1} {p2} {p3} {p4} {p5} {p6} {p7}".split()  # list of all elements
+# map element symbol to atomic number
+symbol_to_z = {symbol: idx + 1 for idx, symbol in enumerate(ALL_SYMBOLS)}
+# map atomic number to element symbol
+z_to_symbol = {v: k for k, v in symbol_to_z.items()}

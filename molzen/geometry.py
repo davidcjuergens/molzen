@@ -5,7 +5,7 @@ import numpy as np
 
 def np_dihedral(a, b, c, d):
     """Compute dihedral angle for four points a, b, c, d
-    
+
     Args:
         a, b, c, d: np.ndarray of shape (3,)"""
 
