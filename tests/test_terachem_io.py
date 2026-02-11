@@ -10,6 +10,7 @@ pytestmark = pytest.mark.local_only
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 def test_parse_casscf_optimization():
     """Tests the parsing of a CASSCF optimization output file from terachem."""
     output_path = os.path.join(THIS_DIR, "data/terachem_casscf_s0_opt.out")
@@ -81,22 +82,22 @@ def test_parse_terachem_output():
 
     es_entry = 5
     root = 1
-    
-    assert parsed["excited_states"][es_entry-1][root]["abs_energy"] == -248.27323993
-    assert parsed["excited_states"][es_entry-1][root]["exc_energy"] == 4.04505765
-    assert parsed["excited_states"][es_entry-1][root]["osc_strength"] == 0.0030
-    assert parsed["excited_states"][es_entry-1][root]["s_squared"] == 0.0000
-    assert parsed["excited_states"][es_entry-1][root]["max_ci_coeff"] == -0.737191
+
+    assert parsed["excited_states"][es_entry - 1][root]["abs_energy"] == -248.27323993
+    assert parsed["excited_states"][es_entry - 1][root]["exc_energy"] == 4.04505765
+    assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0030
+    assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
+    assert parsed["excited_states"][es_entry - 1][root]["max_ci_coeff"] == -0.737191
 
     # should be 5 total entries
     assert len(parsed["excited_states"]) == 5
 
     # should be 10 excited states parsed for this entry
-    assert len(parsed["excited_states"][es_entry-1]) == 10
+    assert len(parsed["excited_states"][es_entry - 1]) == 10
 
     root = 10
-    assert parsed["excited_states"][es_entry-1][root]["abs_energy"] == -248.05883516
-    assert parsed["excited_states"][es_entry-1][root]["exc_energy"] == 9.87930744
-    assert parsed["excited_states"][es_entry-1][root]["osc_strength"] == 0.0014
-    assert parsed["excited_states"][es_entry-1][root]["s_squared"] == 0.0000
-    assert parsed["excited_states"][es_entry-1][root]["max_ci_coeff"] == 0.639490
+    assert parsed["excited_states"][es_entry - 1][root]["abs_energy"] == -248.05883516
+    assert parsed["excited_states"][es_entry - 1][root]["exc_energy"] == 9.87930744
+    assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0014
+    assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
+    assert parsed["excited_states"][es_entry - 1][root]["max_ci_coeff"] == 0.639490
