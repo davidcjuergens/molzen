@@ -19,6 +19,11 @@ def parse_terachem_output(
             and callable is a function that takes (lines, start_idx) and returns (section_dict, end_idx).
         raw_str_in (bool, optional): If True, file_path is treated as raw string input rather than a file path.
     """
+    #### Some constants ####
+    CASSCF_EXCITED_STATES_HEADER = (
+        "Root   Mult.   Total Energy (a.u.)   Ex. Energy (a.u.)     Ex. Energy (eV)"
+    )
+    #### End constants ####
     if not raw_str_in:
         with open(file_path, "r") as tc_file:
             lines = tc_file.readlines()
@@ -42,7 +47,13 @@ def parse_terachem_output(
         ### Ground State Results ###
         if "FINAL ENERGY:" in line:
             energy_line = line.strip().split()
-            out["ground_state_energy"] = float(energy_line[2])
+            ground_state_energy = float(energy_line[2])
+
+            if out.get("ground_state_energy", None) is None:
+                out["ground_state_energy"] = [ground_state_energy]
+            else:
+                out["ground_state_energy"].append(ground_state_energy)
+
             i += 1
             continue
 
@@ -52,10 +63,18 @@ def parse_terachem_output(
 
             # account for possibility of multiple excited state sections
             if out.get("excited_states", None) is None:
-                out["excited_states"] = {1: excited_state_data}
+                out["excited_states"] = [excited_state_data]
             else:
-                cur_section = len(out["excited_states"]) + 1
-                out["excited_states"][cur_section] = excited_state_data
+                out["excited_states"].append(excited_state_data)
+            continue
+
+        ### CASSCF-like excited state results section ###
+        if CASSCF_EXCITED_STATES_HEADER in line:
+            excited_state_data, i = parse_casscf_excited_state_section(lines, start=i)
+            if out.get("casscf_states", None) is None:
+                out["casscf_states"] = [excited_state_data]
+            else:
+                out["casscf_states"].append(excited_state_data)
             continue
 
         # CUSTOM SECTION PARSERS
@@ -74,7 +93,41 @@ def parse_terachem_output(
 
         i += 1
 
+    # Post-processing
+    if out.get("casscf_states") is not None:
+        postprocess_casscf(out)
+
     return out
+
+
+def postprocess_casscf(out):
+    """Organize the CASSCF state data by root and put into more convenient format."""
+    match_roots = None
+    match_root_keys = None
+
+    roots = out["casscf_states"][0].keys()
+
+    # same roots in all sections
+    if match_roots is not None:
+        assert set(roots) == set(match_roots)
+    else:
+        match_roots = roots
+
+    # same keys for each root in all sections
+    root_keys = out["casscf_states"][0][1].keys()
+    if match_root_keys is not None:
+        assert set(root_keys) == set(match_root_keys)
+    else:
+        match_root_keys = root_keys
+
+    o = {}
+    for root in roots:
+        o[root] = {k: [] for k in root_keys}
+        for section in out["casscf_states"]:
+            for k in root_keys:
+                o[root][k].append(section[root][k])
+
+    out["casscf_states"] = o
 
 
 def parse_tc_input_flags(lines: list, start: int) -> dict:
@@ -127,6 +180,45 @@ def parse_tc_input_flags(lines: list, start: int) -> dict:
         out[key] = val
         j += 1
 
+    return out, j
+
+
+def parse_casscf_excited_state_section(lines: list, start: int) -> dict:
+    """Parse a casscf-like excited state results section"""
+
+    def check_end(myline):
+        return myline.isspace()
+
+    def excited_state_line_parser(myline):
+        parts = myline.strip().split()
+        assert len(parts) in (3, 5)  # 3 for root 1, 5 for all others
+        root = int(parts[0])
+        mult_string = parts[1]  # 'singlet', 'triplet', etc
+        total_energy_au = float(parts[2])
+        if len(parts) == 5:
+            exc_energy_au = float(parts[3])
+            exc_energy_ev = float(parts[4])
+        else:
+            exc_energy_au = float("nan")
+            exc_energy_ev = float("nan")
+
+        out = dict(
+            root=root,
+            multiplicity=mult_string,
+            total_energy_au=total_energy_au,
+            exc_energy_au=exc_energy_au,
+            exc_energy_ev=exc_energy_ev,
+        )
+
+        return out
+
+    j = start + 2  # skip header lines
+    out = {}
+    while not check_end(lines[j]):
+        state_data = excited_state_line_parser(lines[j])
+        root = state_data.pop("root")
+        out[root] = state_data
+        j += 1
     return out, j
 
 

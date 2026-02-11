@@ -12,10 +12,13 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["setuptools>=70"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["molzen*"]
-exclude = ["ipynb*", "tests*"]
+[tool.hatch.build.targets.wheel]
+packages = ["molzen"]
+
+[tool.pytest.ini_options]
+markers = [
+    "local_only: tests requiring local data not available in GitHub CI",
+]

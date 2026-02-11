@@ -20,4 +20,4 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check .
       - name: Run tests
-        run: uv run pytest tests
+        run: uv run pytest -m "not local_only" tests
