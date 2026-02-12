@@ -16,14 +16,21 @@ def test_parse_casscf_optimization():
     output_path = os.path.join(THIS_DIR, "data/terachem_casscf_s0_opt.out")
     parsed = parse_terachem_output(output_path)
 
-    assert "casscf_states" in parsed
-    assert len(parsed["casscf_states"]) == 4
-    assert parsed["casscf_states"][1]["total_energy_au"][0] == -1954.15973814
-    assert parsed["casscf_states"][2]["total_energy_au"][0] == -1954.01500372
-    assert parsed["casscf_states"][3]["total_energy_au"][0] == -1953.98558982
-    assert parsed["casscf_states"][4]["total_energy_au"][0] == -1953.97030442
+    # energies
+    assert "casscf_energies" in parsed
+    assert len(parsed["casscf_energies"]) == 4
+    assert parsed["casscf_energies"][1]["total_energy_au"][0] == -1954.15973814
+    assert parsed["casscf_energies"][2]["total_energy_au"][0] == -1954.01500372
+    assert parsed["casscf_energies"][3]["total_energy_au"][0] == -1953.98558982
+    assert parsed["casscf_energies"][4]["total_energy_au"][0] == -1953.97030442
 
-    assert len(parsed["casscf_states"][1]["total_energy_au"]) == 357
+    assert len(parsed["casscf_energies"][1]["total_energy_au"]) == 357
+
+    # Transition dipoles
+    assert "casscf_transition_dipoles" in parsed
+    assert len(parsed["casscf_transition_dipoles"]) == 6
+    assert len(parsed["casscf_transition_dipoles"]["1 -> 2"]["osc_strength"]) == 357
+    # import pdb; pdb.set_trace()
 
 
 def test_parse_terachem_output():
