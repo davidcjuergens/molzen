@@ -20,12 +20,18 @@ def parse_terachem_output(
         raw_str_in (bool, optional): If True, file_path is treated as raw string input rather than a file path.
     """
     #### Some constants ####
+    INPUT_ARGS_HEADER = "Processed Input file:"
+    GROUND_STATE_ENERGY_HEADER = "FINAL ENERGY:"
+    EXCITED_STATES_RESULTS_HEADER = "Final Excited State Results"
+
     CASSCF_EXCITED_STATES_HEADER = (
         "Root   Mult.   Total Energy (a.u.)   Ex. Energy (a.u.)     Ex. Energy (eV)"
     )
     CASSCF_TRANSITION_DIPOLE_HEADER = (
         "Transition      Tx        Ty        Tz       |T|    Osc. (a.u.)"
     )
+    CASSCF_ORB_OCCS_HEADER = "Orbital      Energy        Occupation"
+
     #### End constants ####
     if not raw_str_in:
         with open(file_path, "r") as tc_file:
@@ -39,7 +45,7 @@ def parse_terachem_output(
         line = lines[i]
 
         ### Input Arguments ###
-        if "Processed Input file:" in line:
+        if INPUT_ARGS_HEADER in line:
             assert not out.get("input_args"), "Input args already parsed!"
 
             tc_kwargs, i = parse_tc_input_flags(lines, start=i)
@@ -48,7 +54,7 @@ def parse_terachem_output(
             continue
 
         ### Ground State Results ###
-        if "FINAL ENERGY:" in line:
+        if GROUND_STATE_ENERGY_HEADER in line:
             energy_line = line.strip().split()
             ground_state_energy = float(energy_line[2])
 
@@ -61,7 +67,7 @@ def parse_terachem_output(
             continue
 
         #### Excited State Results ###
-        if "Final Excited State Results" in line:
+        if EXCITED_STATES_RESULTS_HEADER in line:
             excited_state_data, i = parse_excited_state_section(lines, start=i)
 
             # account for possibility of multiple excited state sections
@@ -91,6 +97,15 @@ def parse_terachem_output(
                 out["casscf_transition_dipoles"].append(transition_dipole_data)
             continue
 
+        ### CASSCF-like orbital energies and occupations ###
+        if CASSCF_ORB_OCCS_HEADER in line:
+            orb_occ_data, i = parse_casscf_orbitals(lines, start=i)
+            if out.get("casscf_orbitals", None) is None:
+                out["casscf_orbitals"] = [orb_occ_data]
+            else:
+                out["casscf_orbitals"].append(orb_occ_data)
+            continue
+
         # CUSTOM SECTION PARSERS
         if custom_section_parsers is not None:
             parsed_custom = False
@@ -112,7 +127,71 @@ def parse_terachem_output(
         postprocess_casscf_energies(out)
     if out.get("casscf_transition_dipoles") is not None:
         postprocess_casscf_transition_dipoles(out)
+    if out.get("casscf_orbitals") is not None:
+        postprocess_casscf_orbitals(out)
     return out
+
+
+def parse_casscf_orbitals(lines: list, start: int) -> dict:
+    """Parse a casscf-like orbital energy and occupation section"""
+
+    def check_end(myline):
+        return myline.isspace()
+
+    def orb_occ_line_parser(myline):
+        parts = myline.strip().split()
+        assert len(parts) == 3
+        orb_num = int(parts[0])
+        orb_energy = float(parts[1])
+        orb_occ = float(parts[2])
+
+        out = dict(
+            orb_num=orb_num,
+            orb_energy=orb_energy,
+            orb_occ=orb_occ,
+        )
+
+        return out
+
+    j = start + 2  # skip header lines
+    out = {}
+    while not check_end(lines[j]):
+        orb_occ_data = orb_occ_line_parser(lines[j])
+        orb_num = orb_occ_data.pop("orb_num")
+        out[orb_num] = orb_occ_data
+        j += 1
+    return out, j
+
+
+def postprocess_casscf_orbitals(out):
+    """Organize the CASSCF orbital energy and occupation data by orbital number and put into more convenient format."""
+    match_orbs = None
+    match_orb_keys = None
+
+    orbs = out["casscf_orbitals"][0].keys()
+    example_orb = list(orbs)[0]
+
+    # same orbitals in all sections
+    if match_orbs is not None:
+        assert set(orbs) == set(match_orbs)
+    else:
+        match_orbs = orbs
+
+    # same keys for each orbital in all sections
+    orb_keys = out["casscf_orbitals"][0][example_orb].keys()
+    if match_orb_keys is not None:
+        assert set(orb_keys) == set(match_orb_keys)
+    else:
+        match_orb_keys = orb_keys
+
+    o = {}
+    for orb in orbs:
+        o[orb] = {k: [] for k in orb_keys}
+        for section in out["casscf_orbitals"]:
+            for k in orb_keys:
+                o[orb][k].append(section[orb][k])
+
+    out["casscf_orbitals"] = o
 
 
 def postprocess_casscf_transition_dipoles(out):
