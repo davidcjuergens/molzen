@@ -30,7 +30,7 @@ def test_parse_casscf_optimization():
     assert "casscf_transition_dipoles" in parsed
     assert len(parsed["casscf_transition_dipoles"]) == 6
     assert len(parsed["casscf_transition_dipoles"]["1 -> 2"]["osc_strength"]) == 357
-    
+
     # orbitals
     assert "casscf_orbitals" in parsed
     assert len(parsed["casscf_orbitals"]) == 8
