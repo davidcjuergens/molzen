@@ -23,6 +23,9 @@ def parse_terachem_output(
     CASSCF_EXCITED_STATES_HEADER = (
         "Root   Mult.   Total Energy (a.u.)   Ex. Energy (a.u.)     Ex. Energy (eV)"
     )
+    CASSCF_TRANSITION_DIPOLE_HEADER = (
+        "Transition      Tx        Ty        Tz       |T|    Osc. (a.u.)"
+    )
     #### End constants ####
     if not raw_str_in:
         with open(file_path, "r") as tc_file:
@@ -71,10 +74,21 @@ def parse_terachem_output(
         ### CASSCF-like excited state results section ###
         if CASSCF_EXCITED_STATES_HEADER in line:
             excited_state_data, i = parse_casscf_excited_state_section(lines, start=i)
-            if out.get("casscf_states", None) is None:
-                out["casscf_states"] = [excited_state_data]
+            if out.get("casscf_energies", None) is None:
+                out["casscf_energies"] = [excited_state_data]
             else:
-                out["casscf_states"].append(excited_state_data)
+                out["casscf_energies"].append(excited_state_data)
+            continue
+
+        ### CASSCF-like transition dipole results section ###
+        if CASSCF_TRANSITION_DIPOLE_HEADER in line:
+            transition_dipole_data, i = parse_casscf_transition_dipole_section(
+                lines, start=i
+            )
+            if out.get("casscf_transition_dipoles", None) is None:
+                out["casscf_transition_dipoles"] = [transition_dipole_data]
+            else:
+                out["casscf_transition_dipoles"].append(transition_dipole_data)
             continue
 
         # CUSTOM SECTION PARSERS
@@ -94,18 +108,52 @@ def parse_terachem_output(
         i += 1
 
     # Post-processing
-    if out.get("casscf_states") is not None:
-        postprocess_casscf(out)
-
+    if out.get("casscf_energies") is not None:
+        postprocess_casscf_energies(out)
+    if out.get("casscf_transition_dipoles") is not None:
+        postprocess_casscf_transition_dipoles(out)
     return out
 
 
-def postprocess_casscf(out):
+def postprocess_casscf_transition_dipoles(out):
+    """Organize the CASSCF transition dipole data by root and put into more convenient format."""
+    match_transitions = None
+    match_transition_keys = None
+
+    possible_transitions = list(out["casscf_transition_dipoles"][0].keys())
+    example_transition = possible_transitions[0]
+
+    # same transitions in all sections
+    if match_transitions is not None:
+        assert set(possible_transitions) == set(match_transitions)
+    else:
+        match_transitions = possible_transitions
+
+    # same keys for each transition in all sections
+    transition_keys = out["casscf_transition_dipoles"][0][example_transition].keys()
+    if match_transition_keys is not None:
+        assert set(transition_keys) == set(match_transition_keys)
+    else:
+        match_transition_keys = transition_keys
+
+    o = {}
+    for transition in possible_transitions:
+        o[transition] = {
+            k: [] for k in out["casscf_transition_dipoles"][0][transition].keys()
+        }
+        for i, section in enumerate(out["casscf_transition_dipoles"]):
+            for k in transition_keys:
+                o[transition][k].append(section[transition][k])
+
+    out["casscf_transition_dipoles"] = o
+
+
+def postprocess_casscf_energies(out):
     """Organize the CASSCF state data by root and put into more convenient format."""
     match_roots = None
     match_root_keys = None
 
-    roots = out["casscf_states"][0].keys()
+    roots = out["casscf_energies"][0].keys()
 
     # same roots in all sections
     if match_roots is not None:
@@ -114,7 +162,7 @@ def postprocess_casscf(out):
         match_roots = roots
 
     # same keys for each root in all sections
-    root_keys = out["casscf_states"][0][1].keys()
+    root_keys = out["casscf_energies"][0][1].keys()
     if match_root_keys is not None:
         assert set(root_keys) == set(match_root_keys)
     else:
@@ -123,11 +171,56 @@ def postprocess_casscf(out):
     o = {}
     for root in roots:
         o[root] = {k: [] for k in root_keys}
-        for section in out["casscf_states"]:
+        for section in out["casscf_energies"]:
             for k in root_keys:
                 o[root][k].append(section[root][k])
 
-    out["casscf_states"] = o
+    out["casscf_energies"] = o
+
+
+def parse_casscf_transition_dipole_section(lines: list, start: int) -> dict:
+    """Parse a casscf-like transition dipole results section"""
+
+    def check_end(myline):
+        return myline.isspace()
+
+    def transition_dipole_line_parser(myline):
+        is_digit = [i for i, c in enumerate(myline) if c.isdigit()]
+        assert any(is_digit)
+        first_digit_idx = is_digit[0]
+        second_digit_idx = is_digit[1]
+        transition_state1 = int(myline[first_digit_idx])
+        transition_state2 = int(myline[second_digit_idx])
+        myline = myline[second_digit_idx + 1 :]
+        parts = myline.strip().split()
+        assert len(parts) == 5
+
+        transition = f"{transition_state1} -> {transition_state2}"
+        Tx = float(parts[0])
+        Ty = float(parts[1])
+        Tz = float(parts[2])
+        T_mag = float(parts[3])
+        osc_strength = float(parts[4])
+
+        out = dict(
+            transition=transition,
+            Tx=Tx,
+            Ty=Ty,
+            Tz=Tz,
+            T_mag=T_mag,
+            osc_strength=osc_strength,
+        )
+
+        return out
+
+    j = start + 2  # skip header lines
+    out = {}
+    while not check_end(lines[j]):
+        td_data = transition_dipole_line_parser(lines[j])
+        transition = td_data.pop("transition")
+        out[transition] = td_data
+        j += 1
+    return out, j
 
 
 def parse_tc_input_flags(lines: list, start: int) -> dict:
