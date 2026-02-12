@@ -118,11 +118,7 @@ def test_parse_casscf_orbitals_without_occupations(tmp_path):
     """Orbital sections without occupation column should parse with nan occupancies."""
     output_path = tmp_path / "terachem_orbitals_no_occ.out"
     output_path.write_text(
-        "  Orbital      Energy\n"
-        "  -------------------\n"
-        "1 -20.123\n"
-        "2 -10.456\n"
-        "\n"
+        "  Orbital      Energy\n  -------------------\n1 -20.123\n2 -10.456\n\n"
     )
     parsed = parse_terachem_output(str(output_path))
 
