@@ -30,7 +30,7 @@ def parse_terachem_output(
     CASSCF_TRANSITION_DIPOLE_HEADER = (
         "Transition      Tx        Ty        Tz       |T|    Osc. (a.u.)"
     )
-    CASSCF_ORB_OCCS_HEADER = "Orbital      Energy        Occupation"
+    CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
 
     #### End constants ####
     if not raw_str_in:
@@ -98,7 +98,7 @@ def parse_terachem_output(
             continue
 
         ### CASSCF-like orbital energies and occupations ###
-        if CASSCF_ORB_OCCS_HEADER in line:
+        if CASSCF_ORB_ENERGIES_HEADER in line:
             orb_occ_data, i = parse_casscf_orbitals(lines, start=i)
             if out.get("casscf_orbitals", None) is None:
                 out["casscf_orbitals"] = [orb_occ_data]
@@ -140,10 +140,10 @@ def parse_casscf_orbitals(lines: list, start: int) -> dict:
 
     def orb_occ_line_parser(myline):
         parts = myline.strip().split()
-        assert len(parts) == 3
+        assert len(parts) in (2, 3)
         orb_num = int(parts[0])
         orb_energy = float(parts[1])
-        orb_occ = float(parts[2])
+        orb_occ = float(parts[2]) if len(parts) == 3 else float("nan")
 
         out = dict(
             orb_num=orb_num,

@@ -1,5 +1,6 @@
 """Test terachem output parsing"""
 
+import math
 import os
 
 import pytest
@@ -111,3 +112,21 @@ def test_parse_terachem_output():
     assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0014
     assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
     assert parsed["excited_states"][es_entry - 1][root]["max_ci_coeff"] == 0.639490
+
+
+def test_parse_casscf_orbitals_without_occupations(tmp_path):
+    """Orbital sections without occupation column should parse with nan occupancies."""
+    output_path = tmp_path / "terachem_orbitals_no_occ.out"
+    output_path.write_text(
+        "  Orbital      Energy\n"
+        "  -------------------\n"
+        "1 -20.123\n"
+        "2 -10.456\n"
+        "\n"
+    )
+    parsed = parse_terachem_output(str(output_path))
+
+    assert parsed["casscf_orbitals"][1]["orb_energy"][0] == -20.123
+    assert parsed["casscf_orbitals"][2]["orb_energy"][0] == -10.456
+    assert math.isnan(parsed["casscf_orbitals"][1]["orb_occ"][0])
+    assert math.isnan(parsed["casscf_orbitals"][2]["orb_occ"][0])
