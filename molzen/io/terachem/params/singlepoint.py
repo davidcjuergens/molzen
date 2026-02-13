@@ -41,11 +41,11 @@ CAS_KWARGS = dict(
     cascharges="yes",
     poptype="vdd",
     ci_solver="explicit",
-    cas_ntos="yes",  # more expensive at the end due to SVD the transition density matrix
 )
 # Can also add:
 # casscforbnriter=500
 # casscfnriter=500
+# cas_ntos="yes"
 
 CAS_FON_ENERGY = dict(
     **HF_ENERGY,
