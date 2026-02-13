@@ -19,18 +19,18 @@ FON_KWARGS = dict(
     fon_temperature=0.2,
 )
 
-CAS_GRAD= dict(
-    run="gradient", # or optimize--both would require castarget and castergetmult
-    castarget=1,  # Now we are doing optimization on S1
-    castargetmult=1,
+CAS_GRAD = dict(
+    run="gradient",  # or optimize--both would require castarget and castergetmult
+    castarget=None,  # zero indexed integer
+    castargetmult=None,  # integer multiplicity
 )
 
 CAS_KWARGS = dict(
     maxit=200,  # default is 100
     casscf="yes",
-    cassinglets=4, # however many singlets you'd like to include
+    cassinglets=4,  # however many singlets you'd like to include
     casscfmacromaxiter=0,
-    casscfmaxiter=100, # number of "two-step" iterations, where we (1) orbital optimize, (2) CI optimize
+    casscfmaxiter=100,  # number of "two-step" iterations, where we (1) orbital optimize, (2) CI optimize
     casscftrustmaxiter=10,
     casscfmicroconvthre=100.0,
     casscfmacroconvthre=100.0,
@@ -41,7 +41,7 @@ CAS_KWARGS = dict(
     cascharges="yes",
     poptype="vdd",
     ci_solver="explicit",
-    cas_ntos="yes", # more expensive at the end due to SVD the transition density matrix
+    cas_ntos="yes",  # more expensive at the end due to SVD the transition density matrix
 )
 # Can also add:
 # casscforbnriter=500
