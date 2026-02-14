@@ -202,6 +202,7 @@ def postprocess_casscf_orbitals(out):
 
 def postprocess_casscf_transition_dipoles(out):
     """Organize the CASSCF transition dipole data by root and put into more convenient format."""
+
     def merge_transition_sections(sections):
         """Merge a list of transition-dipole sections into transition-keyed arrays."""
         possible_transitions = []
