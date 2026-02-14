@@ -29,8 +29,12 @@ def test_parse_casscf_optimization():
 
     # Transition dipoles
     assert "casscf_transition_dipoles" in parsed
-    assert len(parsed["casscf_transition_dipoles"]) == 6
-    assert len(parsed["casscf_transition_dipoles"]["1 -> 2"]["osc_strength"]) == 357
+    assert set(parsed["casscf_transition_dipoles"].keys()) == {"singlet"}
+    assert len(parsed["casscf_transition_dipoles"]["singlet"]) == 6
+    assert (
+        len(parsed["casscf_transition_dipoles"]["singlet"]["1 -> 2"]["osc_strength"])
+        == 357
+    )
 
     # orbitals
     assert "casscf_orbitals" in parsed
@@ -126,3 +130,39 @@ def test_parse_casscf_orbitals_without_occupations(tmp_path):
     assert parsed["casscf_orbitals"][2]["orb_energy"][0] == -10.456
     assert math.isnan(parsed["casscf_orbitals"][1]["orb_occ"][0])
     assert math.isnan(parsed["casscf_orbitals"][2]["orb_occ"][0])
+
+
+def test_parse_mixed_spin_casscf_transition_dipoles():
+    """Mixed singlet/triplet transition sections should be grouped by multiplicity."""
+    raw = """
+Singlet state electronic transitions:
+
+ Transition      Tx        Ty        Tz       |T|    Osc. (a.u.)
+-----------------------------------------------------------------
+   1 ->  2     0.0608   -0.0984   -0.9239    0.9311    0.0641
+   1 ->  3     1.5069    1.3524    2.8763    3.5175    0.9676
+   1 ->  4    -0.0858   -0.0738   -0.0082    0.1135    0.0013
+   2 ->  3     0.4098    0.2017   -0.5490    0.7142    0.0022
+   2 ->  4     0.0133   -0.0206   -0.1075    0.1103    0.0004
+   3 ->  4    -0.0182   -0.0304    0.0400    0.0534    0.0001
+
+Triplet state electronic transitions:
+
+ Transition      Tx        Ty        Tz       |T|    Osc. (a.u.)
+-----------------------------------------------------------------
+   1 ->  2     0.3744    0.2630   -0.0233    0.4581    0.0039
+   1 ->  3     0.0133   -0.0119   -0.1497    0.1508    0.0013
+   2 ->  3     0.1273    0.0638   -0.0064    0.1425    0.0008
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    assert "casscf_transition_dipoles" in parsed
+    assert "singlet" in parsed["casscf_transition_dipoles"]
+    assert "triplet" in parsed["casscf_transition_dipoles"]
+
+    assert parsed["casscf_transition_dipoles"]["singlet"]["1 -> 4"]["osc_strength"] == [
+        0.0013
+    ]
+    assert parsed["casscf_transition_dipoles"]["triplet"]["1 -> 2"]["osc_strength"] == [
+        0.0039
+    ]
