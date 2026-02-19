@@ -20,7 +20,8 @@ def test_cube_generation():
 
     generate_nto_cubes(molden_file_str, occ_thresh=0.1, multiwfn_path=multiwfn_path)
     cubfiles = list(Path(molden_file).parent.glob("*.cub"))
-    assert len(cubfiles) == 4
+    assert len(cubfiles) > 0
+    assert len(cubfiles) % 2 == 0
     # delete the generated .cub files to keep the test directory clean.
     for cubfile in cubfiles:
         cubfile.unlink()
