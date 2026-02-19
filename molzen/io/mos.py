@@ -43,7 +43,7 @@ def generate_nto_cubes(
     """
 
     occ_indices_1idx, occs = get_occupied_ntos(molden_path, occ_thresh=occ_thresh)
-    assert np.sum(occs > 0) > 1 and np.sum(occs < 0) > 1, (
+    assert np.sum(occs > 0) >= 1 and np.sum(occs < 0) >= 1, (
         "Need at least 2 occupied orbitals, one with positive occupation and one with negative occupation."
     )
 
