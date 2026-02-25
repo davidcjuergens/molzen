@@ -54,7 +54,7 @@ def make_terachem_input(
         job_scrdir = os.path.join(workdir, f"tc_scr.{prefix}")
     else:
         job_scrdir = os.path.join(scrdir, f"tc_scr.{prefix}")
-    
+
     tc_kwargs["scrdir"] = job_scrdir
     tc_kwargs["coordinates"] = xyz_path
 
