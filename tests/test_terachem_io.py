@@ -173,4 +173,4 @@ def test_args_importable():
     from molzen.io.terachem.args.cas import CAS_FON_ENERGY, CAS_GRAD, CAS_KWARGS
     from molzen.io.terachem.args.cc import CCSD_ARGS, EOMCCSD_ARGS
     from molzen.io.terachem.args.dft import HH_TDA, WPBE, hhtda_fon
-    from molzen.io.terachem.args.singlepoint import FON_KWARGS, HF_ENERGY
+    from molzen.io.terachem.args.hf import FON_KWARGS, HF_ENERGY

@@ -1,6 +1,6 @@
 """DFT related args"""
 
-from molzen.io.terachem.args.singlepoint import FON_KWARGS
+from molzen.io.terachem.args.hf import FON_KWARGS
 
 # example of WPBE functional with tuned omega
 WPBE = dict(method="wpbe", rc_w=0.6)
