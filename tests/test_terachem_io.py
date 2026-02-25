@@ -166,3 +166,10 @@ Triplet state electronic transitions:
     assert parsed["casscf_transition_dipoles"]["triplet"]["1 -> 2"]["osc_strength"] == [
         0.0039
     ]
+
+def test_args_importable():
+    """Test that args modules can be imported without error."""
+    from molzen.io.terachem.args.cas import CAS_FON_ENERGY, CAS_GRAD, CAS_KWARGS
+    from molzen.io.terachem.args.cc import CCSD_ARGS, EOMCCSD_ARGS
+    from molzen.io.terachem.args.dft import HH_TDA, WPBE, hhtda_fon
+    from molzen.io.terachem.args.singlepoint import FON_KWARGS, HF_ENERGY

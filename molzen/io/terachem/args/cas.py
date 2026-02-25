@@ -1,6 +1,6 @@
 """CAS related TeraChem args"""
 
-from molzen.io.terachem.params.singlepoint import HF_ENERGY, FON_KWARGS
+from molzen.io.terachem.args.singlepoint import HF_ENERGY, FON_KWARGS
 
 CAS_GRAD = dict(
     run="gradient",  # or optimize--both would require castarget and castergetmult
