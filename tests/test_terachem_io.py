@@ -167,6 +167,7 @@ Triplet state electronic transitions:
         0.0039
     ]
 
+
 def test_args_importable():
     """Test that args modules can be imported without error."""
     from molzen.io.terachem.args.cas import CAS_FON_ENERGY, CAS_GRAD, CAS_KWARGS
