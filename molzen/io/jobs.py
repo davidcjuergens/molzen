@@ -44,9 +44,7 @@ def generate_parallel_launcher(
     # 2. Format the GPU list for Bash
     # We turn the list [0, 2] into a bash array string "0 2"
     gpu_list_str = " ".join(map(str, cuda_indices))
-    expanded_gpu_slots = [
-        str(gpu) for _ in range(jobs_per_gpu) for gpu in cuda_indices
-    ]
+    expanded_gpu_slots = [str(gpu) for _ in range(jobs_per_gpu) for gpu in cuda_indices]
     gpu_groups = [
         ",".join(expanded_gpu_slots[i : i + gpus_per_job])
         for i in range(0, total_slots * gpus_per_job, gpus_per_job)
