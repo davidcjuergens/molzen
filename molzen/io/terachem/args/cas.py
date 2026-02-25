@@ -1,23 +1,6 @@
-"""Single point job parameters"""
+"""CAS related TeraChem args"""
 
-# Basic HF energy call
-HF_ENERGY = dict(
-    run="energy",
-    guess="generate",
-    basis="6-31gss",
-    method="HF",
-    threall=1e-14,
-    convthre=1e-7,
-    precision="mixed",
-)
-
-# Fractional occupation number (FON) specific
-FON_KWARGS = dict(
-    fon="yes",
-    fon_anneal="no",
-    fon_target=0.2,
-    fon_temperature=0.2,
-)
+from molzen.io.terachem.params.singlepoint import HF_ENERGY, FON_KWARGS
 
 CAS_GRAD = dict(
     run="gradient",  # or optimize--both would require castarget and castergetmult
