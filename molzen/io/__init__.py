@@ -1,1 +1,3 @@
-from .util import *  # io utils like read/write
+from .molecule import Molecule
+
+__all__ = ["Molecule"]
