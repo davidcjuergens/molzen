@@ -1,15 +1,19 @@
 import numpy as np
-from typing import Callable, Optional
+from typing import Optional
 
 from molzen.amino_acids import aa2long, aa2num, oneletter_code, ncaas, num2aa, aa_1_to_3
+from molzen.io.molecule import Molecule
 from molzen.ptable import ALL_SYMBOLS
 
 
-def parse_xyz(xyz_fp):
+def parse_xyz(xyz_fp: str) -> Molecule:
     """Parse a .xyz with potentially multiple frames in it.
 
     Args:
         xyz_fp (str): Path to the .xyz file.
+
+    Returns:
+        Molecule: Standardized molecule container with xyz/elements/comments.
     """
 
     xyzs, elements, comments = [], [], []
@@ -58,7 +62,7 @@ def parse_xyz(xyz_fp):
             xyzs.append(xyz)
             comments.append(comment)
 
-    return dict(xyz=np.array(xyzs), elements=elements, comments=comments)
+    return Molecule(xyz=np.array(xyzs), elements=elements, comments=comments)
 
 
 def write_xyz(
@@ -131,11 +135,14 @@ def _infer_element_from_atom_name(atom_name: str) -> str:
     return ""
 
 
-def parse_mol2(mol2_fp: str):
+def parse_mol2(mol2_fp: str) -> Molecule:
     """Parse a .mol2 file to extract atom information.
 
     Args:
         mol2_fp (str): Path to the .mol2 file.
+
+    Returns:
+        Molecule: Standardized molecule container with atom-level and HETATM data.
     """
     hetatm_data = []
 
@@ -181,7 +188,12 @@ def parse_mol2(mol2_fp: str):
                 )
                 hetatm_data.append(het)
 
-    return dict(hetatm=np.array(hetatm_data))
+    hetatm = np.array(hetatm_data, dtype=MOL2_HETATM_DTYPES)
+    xyz = hetatm["xyz"] if hetatm.size else np.empty((0, 3), dtype=float)
+    atom_names = hetatm["atom_name"].tolist() if hetatm.size else []
+    elements = hetatm["element"].tolist() if hetatm.size else []
+
+    return Molecule(xyz=xyz, atom_names=atom_names, elements=elements, hetatm=hetatm)
 
 
 HETATM_DTYPES = np.dtype(
@@ -195,11 +207,14 @@ HETATM_DTYPES = np.dtype(
 )
 
 
-def parse_pdb(pdb_fp: str):
+def parse_pdb(pdb_fp: str) -> Molecule:
     """Parse a .pdb file to extract atom information. Returns residue-level data for amino acids, atom-level data for HETATM entries.
 
     Args:
         pdb_fp (str): Path to the .pdb file.
+
+    Returns:
+        Molecule: Standardized molecule container with residue xyz/sequence/HETATM data.
     """
     aa_atom_idx = [
         {name.strip(): i for i, name in enumerate(long) if name is not None}
@@ -276,7 +291,8 @@ def parse_pdb(pdb_fp: str):
     if cur_res_id is not None:
         xyz.append(cur_xyz)
 
-    return dict(xyz=np.array(xyz), seq="".join(seq), hetatm=np.array(hetatm_data))
+    hetatm = np.array(hetatm_data, dtype=HETATM_DTYPES)
+    return Molecule(xyz=np.array(xyz), seq="".join(seq), hetatm=hetatm)
 
 
 def write_pdb(file_path, xyz, seq, chains=None, hetatm=None):

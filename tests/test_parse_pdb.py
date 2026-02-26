@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from molzen.io.molecule import Molecule
 from molzen.io.util import parse_pdb
 
 
@@ -11,6 +12,7 @@ def test_parse_1prw():
     pdb_file = this_file.parent / "data" / "1PRW.pdb"
 
     out = parse_pdb(pdb_file)
+    assert isinstance(out, Molecule)
 
     xyz = out["xyz"]  # (Nres, 27, 3)
     seq = out["seq"]  # (Nres, )
