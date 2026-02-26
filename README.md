@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="molzen/img/molzen4.png" alt="molzen" width="500" />
+  <img src="molzen/img/molzen4.png" alt="molzen" width="700" />
 </p>
 
 <p align="center">
@@ -10,6 +10,7 @@
 1. `git clone` the repo
 2. `cd molzen`
 3. `uv sync`
+
 
 
 
