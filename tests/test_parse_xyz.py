@@ -3,7 +3,6 @@
 import pytest
 
 from molzen.io.molecule import Molecule
-from molzen.io.util import parse_xyz
 
 
 def test_parse_xyz_returns_molecule_and_dict_compat(tmp_path):
@@ -19,7 +18,7 @@ def test_parse_xyz_returns_molecule_and_dict_compat(tmp_path):
         "O 0.0 0.1 1.0\n"
     )
 
-    out = parse_xyz(str(xyz_file))
+    out = Molecule.from_xyz(str(xyz_file))
 
     assert isinstance(out, Molecule)
     assert out.xyz.shape == (2, 2, 3)
@@ -31,3 +30,11 @@ def test_parse_xyz_returns_molecule_and_dict_compat(tmp_path):
 
     with pytest.raises(KeyError):
         _ = out["seq"]
+
+    out_file = tmp_path / "written.xyz"
+    out.to_xyz(str(out_file))
+    out_reloaded = Molecule.from_xyz(str(out_file))
+    assert out_reloaded["comments"] == ["frame-0", "frame-1"]
+
+    xyz_text = out.to_xyz(str(out_file), return_str=True)
+    assert "frame-0" in xyz_text
