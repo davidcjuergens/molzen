@@ -58,6 +58,11 @@ def make_terachem_input(
     tc_kwargs["scrdir"] = job_scrdir
     tc_kwargs["coordinates"] = xyz_path
 
+    ## method-specific things
+    # ccbox
+    if tc_kwargs.get("ccbox", None) == "yes":
+        tc_kwargs["ccbox_scratch_dir"] = job_scrdir
+
     # make input file
     longest_key = max([len(key) for key in tc_kwargs.keys()])
     spacer = longest_key + 5
