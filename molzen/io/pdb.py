@@ -47,7 +47,9 @@ def _parse_int_field(raw: str, field_name: str, line_no: int) -> int:
     try:
         return int(text)
     except ValueError as exc:
-        raise ValueError(f"Invalid {field_name} at PDB line {line_no}: {text!r}") from exc
+        raise ValueError(
+            f"Invalid {field_name} at PDB line {line_no}: {text!r}"
+        ) from exc
 
 
 def _parse_float_field(raw: str, field_name: str, line_no: int) -> float:
@@ -57,7 +59,9 @@ def _parse_float_field(raw: str, field_name: str, line_no: int) -> float:
     try:
         return float(text)
     except ValueError as exc:
-        raise ValueError(f"Invalid {field_name} at PDB line {line_no}: {text!r}") from exc
+        raise ValueError(
+            f"Invalid {field_name} at PDB line {line_no}: {text!r}"
+        ) from exc
 
 
 def _parse_optional_float_field(raw: str, field_name: str, line_no: int) -> float:
@@ -67,7 +71,9 @@ def _parse_optional_float_field(raw: str, field_name: str, line_no: int) -> floa
     try:
         return float(text)
     except ValueError as exc:
-        raise ValueError(f"Invalid {field_name} at PDB line {line_no}: {text!r}") from exc
+        raise ValueError(
+            f"Invalid {field_name} at PDB line {line_no}: {text!r}"
+        ) from exc
 
 
 def _infer_element(atom_name: str, explicit_element: str) -> str:
