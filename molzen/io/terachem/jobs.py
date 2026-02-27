@@ -114,6 +114,9 @@ def make_terachem_job_array(
                           If tc_kwargs is a list of dicts, this should be a list of lists of constraints, one per job.
         scrdir: optional path for dumping terachem scratch dirs and job log files. If not provided, will be workdir.
     """
+    if scrdir is not None:
+        os.makedirs(scrdir, exist_ok=False)
+
     if constraint_lists is not None:
         if isinstance(tc_kwargs, list):
             assert len(tc_kwargs) == len(constraint_lists) and isinstance(
