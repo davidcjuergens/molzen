@@ -168,6 +168,107 @@ Triplet state electronic transitions:
     ]
 
 
+def test_parse_eomccsd_energies_and_transition_properties():
+    """EOM-CCSD energy and transition-properties sections should parse."""
+    raw = """
+  --------------------------------------------------------------------
+  ========================> EOM-CCSD Energies <=======================
+  --------------------------------------------------------------------
+  Root      Total Energy (au)      Ex. Energy (au)     Ex. Energy (eV)
+  --------------------------------------------------------------------
+    0    -1404.4557280091889879
+    1    -1404.3385943668226901       0.1171336424       3.1873680532
+    2    -1404.3116931618417311       0.1440348473       3.9193869644
+    3    -1404.3018879358712638       0.1538400733       4.1862006943
+  --------------------------------------------------------------------
+
+  --------------------------------------------------------------------
+  =================> EOM-CCSD Transition Properties <=================
+  --------------------------------------------------------------------
+  Transition       Excitation Energy (eV)       Oscillator Strength (au)
+  --------------------------------------------------------------------
+    0 ->   1               3.18739835                     0.88155009
+    0 ->   2               3.91941497                     0.02048534
+    0 ->   3               4.18621136                     0.06915175
+    1 ->   2               0.73201662                     0.02402609
+    1 ->   3               0.99881301                     0.02457466
+    2 ->   3               0.26679639                     0.00351124
+  --------------------------------------------------------------------
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    assert "eomccsd_energies" in parsed
+    energies = parsed["eomccsd_energies"][0]
+    assert energies[0]["total_energy_au"] == -1404.455728009189
+    assert math.isnan(energies[0]["exc_energy_au"])
+    assert math.isnan(energies[0]["exc_energy_ev"])
+    assert energies[3]["exc_energy_ev"] == 4.1862006943
+
+    assert "eomccsd_transition" in parsed
+    transitions = parsed["eomccsd_transition"][0]
+    assert transitions["0 -> 1"]["exc_energy_ev"] == 3.18739835
+    assert transitions["0 -> 1"]["osc_strength"] == 0.88155009
+    assert transitions["2 -> 3"]["exc_energy_ev"] == 0.26679639
+
+
+def test_parse_eomccsd_transition_mu_elements():
+    """Headerless <i|mu|j>: x y z lines should parse as transition dipoles."""
+    raw = """
+<0|mu|1>:     2.219085     1.672374     1.575919
+<1|mu|0>:     2.454885     1.850418     1.742941
+
+<0|mu|2>:    -0.303579    -0.312271    -0.009126
+<2|mu|0>:    -0.333022    -0.359734     0.010645
+
+<0|mu|3>:    -0.297247    -0.193969     0.694646
+<3|mu|0>:    -0.320314    -0.231101     0.769048
+
+<1|mu|2>:    -0.774388    -0.657218    -0.477613
+<2|mu|1>:    -0.823757    -0.693573    -0.514963
+
+<1|mu|3>:     0.717595     0.530096     0.460777
+<3|mu|1>:     0.715936     0.526148     0.459217
+
+<2|mu|3>:     0.189998     0.089503    -0.727510
+<3|mu|2>:     0.155043     0.077870    -0.688314
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    assert "eomccsd_transition_mu" in parsed
+    transitions = parsed["eomccsd_transition_mu"][0]
+    assert transitions["0 -> 1"]["Tx"] == 2.219085
+    assert transitions["0 -> 1"]["Ty"] == 1.672374
+    assert transitions["0 -> 1"]["Tz"] == 1.575919
+    assert transitions["0 -> 1"]["T_mag"] == pytest.approx(
+        math.sqrt(2.219085**2 + 1.672374**2 + 1.575919**2)
+    )
+    assert math.isnan(transitions["0 -> 1"]["osc_strength"])
+
+    assert transitions["1 -> 0"]["Tx"] == 2.454885
+    assert transitions["1 -> 0"]["Ty"] == 1.850418
+    assert transitions["1 -> 0"]["Tz"] == 1.742941
+    assert transitions["2 -> 3"]["Tz"] == -0.727510
+    assert transitions["3 -> 2"]["Tz"] == -0.688314
+
+
+def test_parse_eomccsd_transition_properties_rejects_five_values():
+    """Five-value rows in EOM-CCSD transition properties should raise."""
+    raw = """
+  --------------------------------------------------------------------
+  =================> EOM-CCSD Transition Properties <=================
+  --------------------------------------------------------------------
+  Transition       Excitation Energy (eV)       Oscillator Strength (au)
+  --------------------------------------------------------------------
+    0 ->   1         1.0000000      2.0000000      3.0000000      4.0000000      5.0000000
+  --------------------------------------------------------------------
+"""
+    with pytest.raises(
+        ValueError,
+        match="EOM-CCSD transition properties rows with five values are invalid",
+    ):
+        parse_terachem_output(raw, raw_str_in=True)
+
+
 def test_args_importable():
     """Test that args modules can be imported without error."""
     from molzen.io.terachem.args.cas import CAS_FON_ENERGY, CAS_GRAD, CAS_KWARGS
