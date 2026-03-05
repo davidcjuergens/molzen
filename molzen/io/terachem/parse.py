@@ -5,6 +5,25 @@ from typing import Union
 import numpy as np
 
 
+def is_casscf_like_excited_state_header(myline: str) -> bool:
+    """Return True for CASSCF/HH-TDA-like excited-state energy table headers."""
+    stripped = myline.strip()
+    if not stripped:
+        return False
+
+    normalized = " ".join(stripped.lower().split())
+    if not normalized.startswith("root"):
+        return False
+
+    required_tokens = (
+        "mult.",
+        "total energy (a.u.)",
+        "ex. energy (a.u.)",
+        "ex. energy (ev)",
+    )
+    return all(token in normalized for token in required_tokens)
+
+
 def parse_terachem_output(
     file_path: str,
     custom_section_parsers: Union[None, dict] = None,
@@ -22,19 +41,15 @@ def parse_terachem_output(
     """
     #### Some constants ####
     INPUT_ARGS_HEADER = "Processed Input file:"
-    GROUND_STATE_ENERGY_HEADER = "FINAL ENERGY:"
+    SCF_ENERGY_HEADER = "FINAL ENERGY:"
     EXCITED_STATES_RESULTS_HEADER = "Final Excited State Results"
-
-    CASSCF_EXCITED_STATES_HEADER = (
-        "Root   Mult.   Total Energy (a.u.)   Ex. Energy (a.u.)     Ex. Energy (eV)"
-    )
     CASSCF_SINGLET_TRANSITION_DIPOLE_HEADER = "Singlet state electronic transitions:"
     CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER = "Triplet state electronic transitions:"
     CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
     EOMCCSD_ENERGIES_HEADER = "====> EOM-CCSD Energies <===="
     EOMCCSD_TRANSITION_PROPERTIES_HEADER = "====> EOM-CCSD Transition Properties <===="
-
     #### End constants ####
+
     if not raw_str_in:
         with open(file_path, "r") as tc_file:
             lines = tc_file.readlines()
@@ -56,14 +71,14 @@ def parse_terachem_output(
             continue
 
         ### Ground State Results ###
-        if GROUND_STATE_ENERGY_HEADER in line:
+        if SCF_ENERGY_HEADER in line:
             energy_line = line.strip().split()
-            ground_state_energy = float(energy_line[2])
+            scf_energy_energy = float(energy_line[2])
 
-            if out.get("ground_state_energy", None) is None:
-                out["ground_state_energy"] = [ground_state_energy]
+            if out.get("scf_energy_energy", None) is None:
+                out["scf_energy_energy"] = [scf_energy_energy]
             else:
-                out["ground_state_energy"].append(ground_state_energy)
+                out["scf_energy_energy"].append(scf_energy_energy)
 
             i += 1
             continue
@@ -80,7 +95,7 @@ def parse_terachem_output(
             continue
 
         ### CASSCF-like excited state results section ###
-        if CASSCF_EXCITED_STATES_HEADER in line:
+        if is_casscf_like_excited_state_header(line):
             excited_state_data, i = parse_casscf_excited_state_section(lines, start=i)
             if out.get("casscf_energies", None) is None:
                 out["casscf_energies"] = [excited_state_data]
@@ -139,11 +154,12 @@ def parse_terachem_output(
             eomccsd_transition_data, i = parse_eomccsd_transition_mu_elements(
                 lines, start=i
             )
-            if out.get("eomccsd_transition_mu", None) is None:
-                out["eomccsd_transition_mu"] = [eomccsd_transition_data]
+            if out.get("eomccsd_transition_dipoles", None) is None:
+                out["eomccsd_transition_dipoles"] = [eomccsd_transition_data]
             else:
-                out["eomccsd_transition_mu"].append(eomccsd_transition_data)
+                out["eomccsd_transition_dipoles"].append(eomccsd_transition_data)
             continue
+        
         # CUSTOM SECTION PARSERS
         if custom_section_parsers is not None:
             parsed_custom = False
@@ -285,30 +301,27 @@ def postprocess_casscf_transition_dipoles(out):
 
 def postprocess_casscf_energies(out):
     """Organize the CASSCF state data by root and put into more convenient format."""
-    match_roots = None
-    match_root_keys = None
-
-    roots = out["casscf_energies"][0].keys()
-
-    # same roots in all sections
-    if match_roots is not None:
-        assert set(roots) == set(match_roots)
-    else:
-        match_roots = roots
-
-    # same keys for each root in all sections
-    root_keys = out["casscf_energies"][0][1].keys()
-    if match_root_keys is not None:
-        assert set(root_keys) == set(match_root_keys)
-    else:
-        match_root_keys = root_keys
+    roots = sorted(
+        {root for section in out["casscf_energies"] for root in section.keys()}
+    )
+    root_keys = sorted(
+        {
+            key
+            for section in out["casscf_energies"]
+            for state_data in section.values()
+            for key in state_data.keys()
+        }
+    )
 
     o = {}
     for root in roots:
         o[root] = {k: [] for k in root_keys}
         for section in out["casscf_energies"]:
+            state_data = section.get(root)
             for k in root_keys:
-                o[root][k].append(section[root][k])
+                o[root][k].append(
+                    np.nan if state_data is None else state_data.get(k, np.nan)
+                )
 
     out["casscf_energies"] = o
 
@@ -400,7 +413,8 @@ def parse_eomccsd_transition_properties(lines: list, start: int) -> dict:
 
         if len(parts) == 5:
             raise ValueError(
-                f"Unknown EOM-CCSD transition line format: {myline.strip()}"
+                "EOM-CCSD transition properties rows with five values are invalid: "
+                f"{myline.strip()}"
             )
 
         raise ValueError(f"Unexpected EOM-CCSD transition line format: {myline}")
@@ -623,20 +637,42 @@ def parse_casscf_excited_state_section(lines: list, start: int) -> dict:
     """Parse a casscf-like excited state results section"""
 
     def check_end(myline):
-        return myline.isspace()
+        return not myline.strip()
 
     def excited_state_line_parser(myline):
         parts = myline.strip().split()
-        assert len(parts) in (3, 5)  # 3 for root 1, 5 for all others
+        if len(parts) < 3:
+            raise ValueError(f"Unexpected CASSCF-like energy line format: {myline}")
+
         root = int(parts[0])
         mult_string = parts[1]  # 'singlet', 'triplet', etc
-        total_energy_au = float(parts[2])
-        if len(parts) == 5:
-            exc_energy_au = float(parts[3])
-            exc_energy_ev = float(parts[4])
-        else:
+        float_values = [float(x) for x in parts[2:]]
+        total_energy_au = float_values[0]
+        extras = float_values[1:]
+
+        if len(extras) == 0:
+            # Root 1 is ground state--no excitation information
             exc_energy_au = float("nan")
             exc_energy_ev = float("nan")
+            exc_energy_nm = float("nan")
+            osc_strength = float("nan")
+        elif len(extras) == 2:
+            # Roots > 1 have (au, eV)
+            exc_energy_au = extras[0]
+            exc_energy_ev = extras[1]
+            exc_energy_nm = float("nan")
+            osc_strength = float("nan")
+        elif len(extras) == 4:
+            # HH-TDA-like formatting adds (nm, osc)
+            exc_energy_au = extras[0]
+            exc_energy_ev = extras[1]
+            exc_energy_nm = extras[2]
+            osc_strength = extras[3]
+        else:
+            raise ValueError(
+                "Unexpected CASSCF-like energy line format "
+                f"(got {len(parts)} columns): {myline}"
+            )
 
         out = dict(
             root=root,
@@ -644,17 +680,40 @@ def parse_casscf_excited_state_section(lines: list, start: int) -> dict:
             total_energy_au=total_energy_au,
             exc_energy_au=exc_energy_au,
             exc_energy_ev=exc_energy_ev,
+            exc_energy_nm=exc_energy_nm,
+            osc_strength=osc_strength,
         )
 
         return out
 
-    j = start + 2  # skip header lines
+    j = start + 1
     out = {}
-    while not check_end(lines[j]):
-        state_data = excited_state_line_parser(lines[j])
+    while j < len(lines):
+        line = lines[j]
+        stripped = line.strip()
+
+        if check_end(line):
+            if out:
+                break
+            j += 1
+            continue
+
+        if stripped.lower().startswith("root") or set(stripped) == {"-"}:
+            j += 1
+            continue
+
+        try:
+            state_data = excited_state_line_parser(line)
+        except ValueError as e:
+            print(
+                f"WARNING: Breaking parse of section due to error: {e} (line {j}: {lines[j]})"
+            )
+            break
+
         root = state_data.pop("root")
         out[root] = state_data
         j += 1
+
     return out, j
 
 
