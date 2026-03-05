@@ -118,6 +118,26 @@ def test_parse_terachem_output():
     assert parsed["excited_states"][es_entry - 1][root]["max_ci_coeff"] == 0.639490
 
 
+def test_parse_hhtda_superset_casscf_energy_header():
+    """HH-TDA excited-state table should parse via the CASSCF-like energy parser."""
+    raw = """
+  Root   Mult.   Total Energy (a.u.)   Ex. Energy (a.u.)     Ex. Energy (eV)     Ex. Energy (nm)        Osc. (a.u.)
+--------------------------------------------------------------------------------------------------------------------
+   1 singlet -248.42161559 0.00000000 0.00000000 inf 0.00000000
+   2 singlet -248.27323993 0.14837566 4.03751706 307.08688619 0.00300000
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    assert "casscf_energies" in parsed
+    assert parsed["casscf_energies"][1]["total_energy_au"] == [-248.42161559]
+    assert math.isinf(parsed["casscf_energies"][1]["exc_energy_nm"][0])
+    assert parsed["casscf_energies"][1]["osc_strength"] == [0.0]
+    assert parsed["casscf_energies"][2]["exc_energy_au"] == [0.14837566]
+    assert parsed["casscf_energies"][2]["exc_energy_ev"] == [4.03751706]
+    assert parsed["casscf_energies"][2]["exc_energy_nm"] == [307.08688619]
+    assert parsed["casscf_energies"][2]["osc_strength"] == [0.003]
+
+
 def test_parse_casscf_orbitals_without_occupations(tmp_path):
     """Orbital sections without occupation column should parse with nan occupancies."""
     output_path = tmp_path / "terachem_orbitals_no_occ.out"
