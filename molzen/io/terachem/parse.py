@@ -31,6 +31,8 @@ def parse_terachem_output(
     CASSCF_SINGLET_TRANSITION_DIPOLE_HEADER = "Singlet state electronic transitions:"
     CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER = "Triplet state electronic transitions:"
     CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
+    EOMCCSD_ENERGIES_HEADER = "====> EOM-CCSD Energies <===="
+    EOMCCSD_TRANSITION_PROPERTIES_HEADER = "====> EOM-CCSD Transition Properties <===="
 
     #### End constants ####
     if not raw_str_in:
@@ -112,6 +114,36 @@ def parse_terachem_output(
                 out["casscf_orbitals"].append(orb_occ_data)
             continue
 
+        ### EOM-CCSD Energies ###
+        if EOMCCSD_ENERGIES_HEADER in line:
+            eomccsd_energy_data, i = parse_eomccsd_energies(lines, start=i)
+            if out.get("eomccsd_energies", None) is None:
+                out["eomccsd_energies"] = [eomccsd_energy_data]
+            else:
+                out["eomccsd_energies"].append(eomccsd_energy_data)
+            continue
+
+        ### EOM-CCSD Transition Properties ###
+        if EOMCCSD_TRANSITION_PROPERTIES_HEADER in line:
+            eomccsd_transition_data, i = parse_eomccsd_transition_properties(
+                lines, start=i
+            )
+            if out.get("eomccsd_transition", None) is None:
+                out["eomccsd_transition"] = [eomccsd_transition_data]
+            else:
+                out["eomccsd_transition"].append(eomccsd_transition_data)
+            continue
+
+        ### EOM-CCSD transition dipole matrix elements (<i|mu|j>: x y z) ###
+        if is_eomccsd_transition_mu_line(line):
+            eomccsd_transition_data, i = parse_eomccsd_transition_mu_elements(
+                lines, start=i
+            )
+            if out.get("eomccsd_transition_mu", None) is None:
+                out["eomccsd_transition_mu"] = [eomccsd_transition_data]
+            else:
+                out["eomccsd_transition_mu"].append(eomccsd_transition_data)
+            continue
         # CUSTOM SECTION PARSERS
         if custom_section_parsers is not None:
             parsed_custom = False
@@ -279,6 +311,193 @@ def postprocess_casscf_energies(out):
                 o[root][k].append(section[root][k])
 
     out["casscf_energies"] = o
+
+
+def parse_eomccsd_energies(lines: list, start: int) -> dict:
+    """Parse EOM-CCSD energy section from terachem output."""
+    assert "EOM-CCSD Energies" in lines[start]
+
+    def state_line_parser(myline):
+        parts = myline.strip().split()
+        if len(parts) not in (2, 4):
+            raise ValueError(f"Unexpected EOM-CCSD energy line format: {myline}")
+
+        root = int(parts[0])
+        total_energy_au = float(parts[1])
+        if len(parts) == 4:
+            exc_energy_au = float(parts[2])
+            exc_energy_ev = float(parts[3])
+        else:
+            exc_energy_au = float("nan")
+            exc_energy_ev = float("nan")
+
+        return dict(
+            root=root,
+            total_energy_au=total_energy_au,
+            exc_energy_au=exc_energy_au,
+            exc_energy_ev=exc_energy_ev,
+        )
+
+    j = start + 1
+    out = {}
+    while j < len(lines):
+        line = lines[j]
+        stripped = line.strip()
+
+        if not stripped:
+            if out:
+                break
+            j += 1
+            continue
+
+        if (
+            stripped.startswith("Root")
+            or "EOM-CCSD Energies" in stripped
+            or set(stripped) == {"-"}
+        ):
+            j += 1
+            continue
+
+        try:
+            state_data = state_line_parser(line)
+        except Exception:
+            break
+
+        root = state_data.pop("root")
+        out[root] = state_data
+        j += 1
+    return out, j
+
+
+def parse_eomccsd_transition_properties(lines: list, start: int) -> dict:
+    """Parse EOM-CCSD transition properties section from terachem output."""
+    assert "EOM-CCSD Transition" in lines[start]
+
+    def transition_line_parser(myline):
+        transition_match = re.match(r"\s*(\d+)\s*->\s*(\d+)\s+(.*)", myline)
+        if transition_match is None:
+            raise ValueError(f"Unexpected EOM-CCSD transition line format: {myline}")
+
+        transition_state1 = int(transition_match.group(1))
+        transition_state2 = int(transition_match.group(2))
+        parts = transition_match.group(3).strip().split()
+        transition = f"{transition_state1} -> {transition_state2}"
+
+        if len(parts) == 2:
+            return dict(
+                transition=transition,
+                exc_energy_ev=float(parts[0]),
+                osc_strength=float(parts[1]),
+            )
+
+        if len(parts) == 3:
+            return dict(
+                transition=transition,
+                exc_energy_au=float(parts[0]),
+                exc_energy_ev=float(parts[1]),
+                osc_strength=float(parts[2]),
+            )
+
+        if len(parts) == 5:
+            raise ValueError(
+                f"Unknown EOM-CCSD transition line format: {myline.strip()}"
+            )
+
+        raise ValueError(f"Unexpected EOM-CCSD transition line format: {myline}")
+
+    j = start + 1
+    out = {}
+    while j < len(lines):
+        line = lines[j]
+        stripped = line.strip()
+
+        if not stripped:
+            if out:
+                break
+            j += 1
+            continue
+
+        if (
+            stripped.startswith("Transition")
+            or "EOM-CCSD Transition" in stripped
+            or set(stripped) == {"-"}
+        ):
+            j += 1
+            continue
+
+        if re.match(r"\s*\d+\s*->\s*\d+\s+", line) is None:
+            break
+        transition_data = transition_line_parser(line)
+
+        transition = transition_data.pop("transition")
+        out[transition] = transition_data
+        j += 1
+    return out, j
+
+
+def is_eomccsd_transition_mu_line(myline: str) -> bool:
+    """Check whether a line contains an EOM transition dipole matrix element."""
+    return (
+        re.match(r"\s*<\s*\d+\s*\|\s*mu\s*\|\s*\d+\s*>\s*:", myline, re.IGNORECASE)
+        is not None
+    )
+
+
+def parse_eomccsd_transition_mu_elements(lines: list, start: int) -> dict:
+    """Parse headerless EOM transition dipoles in '<i|mu|j>: x y z' format."""
+
+    def transition_mu_line_parser(myline):
+        mu_match = re.match(
+            r"\s*<\s*(\d+)\s*\|\s*mu\s*\|\s*(\d+)\s*>\s*:\s*"
+            r"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+"
+            r"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+"
+            r"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*$",
+            myline,
+            re.IGNORECASE,
+        )
+        if mu_match is None:
+            raise ValueError(f"Unexpected EOM transition dipole format: {myline}")
+
+        transition_state1 = int(mu_match.group(1))
+        transition_state2 = int(mu_match.group(2))
+        Tx = float(mu_match.group(3))
+        Ty = float(mu_match.group(4))
+        Tz = float(mu_match.group(5))
+        T_mag = float(np.sqrt(Tx**2 + Ty**2 + Tz**2))
+
+        return dict(
+            transition=f"{transition_state1} -> {transition_state2}",
+            Tx=Tx,
+            Ty=Ty,
+            Tz=Tz,
+            T_mag=T_mag,
+            osc_strength=float("nan"),
+        )
+
+    assert is_eomccsd_transition_mu_line(lines[start])
+
+    j = start
+    out = {}
+    while j < len(lines):
+        line = lines[j]
+        stripped = line.strip()
+
+        if not stripped:
+            j += 1
+            continue
+
+        if not is_eomccsd_transition_mu_line(line):
+            if out:
+                break
+            j += 1
+            continue
+
+        transition_data = transition_mu_line_parser(line)
+        transition = transition_data.pop("transition")
+        out[transition] = transition_data
+        j += 1
+
+    return out, j
 
 
 def parse_casscf_transition_dipole_section(
