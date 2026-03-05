@@ -159,7 +159,7 @@ def parse_terachem_output(
             else:
                 out["eomccsd_transition_dipoles"].append(eomccsd_transition_data)
             continue
-        
+
         # CUSTOM SECTION PARSERS
         if custom_section_parsers is not None:
             parsed_custom = False
