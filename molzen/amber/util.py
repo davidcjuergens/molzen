@@ -6,6 +6,39 @@ import numpy as np
 import pytraj as pt
 
 
+# Compute frozen indices
+def get_nonqm_frozen_indices_1idx(
+    prmtop: str, crds: str, ligand_mask: str, dcut: float, qm_region_0idx: list
+) -> list:
+    """Compute frozen indices according to distance cutoff from ligand taht are not in the QM region.
+
+    Args:
+        prmtop (str): Path to the topology file.
+        crds (str): Path to the coordinate file (rst7).
+        ligand_mask (str): cpptraj selection mask for the ligand (e.g., ':JF4').
+        dcut (float): Distance cutoff in Angstroms.
+        qm_region_0idx (list of int): List of 0-indexed atom indices in the QM region.
+    Returns:
+        list of int: List of 1-indexed atom indices to freeze.
+    """
+
+    traj = pt.load(crds, top=prmtop)
+    # set reference frame to first frame
+    traj.top.set_reference(traj[0])
+
+    # build the mask
+    frozen_0idx = traj.top.select(f"({ligand_mask} >:{dcut})")
+    print(
+        f"Found {len(frozen_0idx)}/{traj.top.n_atoms} atoms beyond {dcut} Angstroms from {ligand_mask}."
+    )
+    # remove any indices that are in the QM region
+    frozen_0idx = [i for i in frozen_0idx if i not in qm_region_0idx]
+
+    # convert to 1-indexed
+    frozen_1idx = [int(i) + 1 for i in frozen_0idx]
+    return frozen_1idx
+
+
 def make_spherical_water_droplet(
     prmtop,
     rst7,
