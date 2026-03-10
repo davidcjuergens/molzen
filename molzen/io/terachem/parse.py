@@ -5,25 +5,6 @@ import re
 from typing import Union
 import numpy as np
 
-STANDARDIZED_EXCITED_RECORD_COLUMNS = (
-    "source",
-    "section_idx",
-    "state_i",
-    "state_j",
-    "multiplicity",
-    "total_energy_au",
-    "exc_energy_au",
-    "exc_energy_ev",
-    "exc_energy_nm",
-    "osc_strength",
-    "Tx",
-    "Ty",
-    "Tz",
-    "T_mag",
-    "s_squared",
-    "max_ci_coeff",
-)
-
 STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
     "source": None,
     "section_idx": np.nan,
@@ -46,7 +27,7 @@ STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
 
 def make_standardized_excited_record(**kwargs) -> dict:
     """Create one standardized excited-state record with defaults for missing fields."""
-    unknown_keys = sorted(set(kwargs.keys()) - set(STANDARDIZED_EXCITED_RECORD_COLUMNS))
+    unknown_keys = sorted(set(kwargs.keys()) - set(STANDARDIZED_EXCITED_RECORD_DEFAULTS))
     if unknown_keys:
         raise KeyError(
             "Unexpected keys for standardized excited-state record: "
