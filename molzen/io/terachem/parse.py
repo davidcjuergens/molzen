@@ -27,7 +27,9 @@ STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
 
 def make_standardized_excited_record(**kwargs) -> dict:
     """Create one standardized excited-state record with defaults for missing fields."""
-    unknown_keys = sorted(set(kwargs.keys()) - set(STANDARDIZED_EXCITED_RECORD_DEFAULTS))
+    unknown_keys = sorted(
+        set(kwargs.keys()) - set(STANDARDIZED_EXCITED_RECORD_DEFAULTS)
+    )
     if unknown_keys:
         raise KeyError(
             "Unexpected keys for standardized excited-state record: "
