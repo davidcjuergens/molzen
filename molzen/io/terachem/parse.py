@@ -1,8 +1,66 @@
 """Parsing terachem outputs"""
 
+import inspect
 import re
 from typing import Union
 import numpy as np
+
+STANDARDIZED_EXCITED_RECORD_COLUMNS = (
+    "source",
+    "section_idx",
+    "state_i",
+    "state_j",
+    "multiplicity",
+    "total_energy_au",
+    "exc_energy_au",
+    "exc_energy_ev",
+    "exc_energy_nm",
+    "osc_strength",
+    "Tx",
+    "Ty",
+    "Tz",
+    "T_mag",
+    "s_squared",
+    "max_ci_coeff",
+)
+
+STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
+    "source": None,
+    "section_idx": np.nan,
+    "state_i": np.nan,
+    "state_j": np.nan,
+    "multiplicity": None,
+    "total_energy_au": np.nan,
+    "exc_energy_au": np.nan,
+    "exc_energy_ev": np.nan,
+    "exc_energy_nm": np.nan,
+    "osc_strength": np.nan,
+    "Tx": np.nan,
+    "Ty": np.nan,
+    "Tz": np.nan,
+    "T_mag": np.nan,
+    "s_squared": np.nan,
+    "max_ci_coeff": np.nan,
+}
+
+
+def make_standardized_excited_record(**kwargs) -> dict:
+    """Create one standardized excited-state record with defaults for missing fields."""
+    unknown_keys = sorted(set(kwargs.keys()) - set(STANDARDIZED_EXCITED_RECORD_COLUMNS))
+    if unknown_keys:
+        raise KeyError(
+            "Unexpected keys for standardized excited-state record: "
+            f"{', '.join(unknown_keys)}"
+        )
+
+    record = STANDARDIZED_EXCITED_RECORD_DEFAULTS.copy()
+    record.update(kwargs)
+    return record
+
+
+def build_standardized_excited_records(records: list[dict]) -> list[dict]:
+    """Normalize row dictionaries to the standardized excited-state record schema."""
+    return [make_standardized_excited_record(**record) for record in records]
 
 
 def is_casscf_like_excited_state_header(myline: str) -> bool:
@@ -57,6 +115,7 @@ def parse_terachem_output(
         lines = file_path.splitlines()
 
     out = {}
+    standardized_excited_records = []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -73,19 +132,26 @@ def parse_terachem_output(
         ### Ground State Results ###
         if SCF_ENERGY_HEADER in line:
             energy_line = line.strip().split()
-            scf_energy_energy = float(energy_line[2])
+            scf_energy = float(energy_line[2])
 
-            if out.get("scf_energy_energy", None) is None:
-                out["scf_energy_energy"] = [scf_energy_energy]
+            if out.get("scf_energy", None) is None:
+                out["scf_energy"] = [scf_energy]
             else:
-                out["scf_energy_energy"].append(scf_energy_energy)
+                out["scf_energy"].append(scf_energy)
 
             i += 1
             continue
 
         #### Excited State Results ###
         if EXCITED_STATES_RESULTS_HEADER in line:
-            excited_state_data, i = parse_excited_state_section(lines, start=i)
+            section_idx = len(out.get("excited_states", []))
+            excited_state_data, section_records, i = parse_excited_state_section(
+                lines, start=i, return_standardized_records=True
+            )
+            
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
 
             # account for possibility of multiple excited state sections
             if out.get("excited_states", None) is None:
@@ -96,7 +162,15 @@ def parse_terachem_output(
 
         ### CASSCF-like excited state results section ###
         if is_casscf_like_excited_state_header(line):
-            excited_state_data, i = parse_casscf_excited_state_section(lines, start=i)
+            section_idx = len(out.get("casscf_energies", []))
+            excited_state_data, section_records, i = parse_casscf_excited_state_section(
+                lines, start=i, return_standardized_records=True
+            )
+            
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+            
             if out.get("casscf_energies", None) is None:
                 out["casscf_energies"] = [excited_state_data]
             else:
@@ -111,9 +185,20 @@ def parse_terachem_output(
             transition_multiplicity = "triplet"
 
         if transition_multiplicity is not None:
-            transition_dipole_data, i = parse_casscf_transition_dipole_section(
-                lines, start=i, multiplicity=transition_multiplicity
+            section_idx = len(out.get("casscf_transition_dipoles", []))
+            transition_dipole_data, section_records, i = (
+                parse_casscf_transition_dipole_section(
+                    lines,
+                    start=i,
+                    multiplicity=transition_multiplicity,
+                    return_standardized_records=True,
+                )
             )
+
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+            
             if out.get("casscf_transition_dipoles", None) is None:
                 out["casscf_transition_dipoles"] = [transition_dipole_data]
             else:
@@ -131,7 +216,15 @@ def parse_terachem_output(
 
         ### EOM-CCSD Energies ###
         if EOMCCSD_ENERGIES_HEADER in line:
-            eomccsd_energy_data, i = parse_eomccsd_energies(lines, start=i)
+            section_idx = len(out.get("eomccsd_energies", []))
+            eomccsd_energy_data, section_records, i = parse_eomccsd_energies(
+                lines, start=i, return_standardized_records=True
+            )
+            
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+            
             if out.get("eomccsd_energies", None) is None:
                 out["eomccsd_energies"] = [eomccsd_energy_data]
             else:
@@ -140,9 +233,17 @@ def parse_terachem_output(
 
         ### EOM-CCSD Transition Properties ###
         if EOMCCSD_TRANSITION_PROPERTIES_HEADER in line:
-            eomccsd_transition_data, i = parse_eomccsd_transition_properties(
-                lines, start=i
+            section_idx = len(out.get("eomccsd_transition", []))
+            eomccsd_transition_data, section_records, i = (
+                parse_eomccsd_transition_properties(
+                    lines, start=i, return_standardized_records=True
+                )
             )
+            
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+            
             if out.get("eomccsd_transition", None) is None:
                 out["eomccsd_transition"] = [eomccsd_transition_data]
             else:
@@ -151,9 +252,17 @@ def parse_terachem_output(
 
         ### EOM-CCSD transition dipole matrix elements (<i|mu|j>: x y z) ###
         if is_eomccsd_transition_mu_line(line):
-            eomccsd_transition_data, i = parse_eomccsd_transition_mu_elements(
-                lines, start=i
+            section_idx = len(out.get("eomccsd_transition_dipoles", []))
+            eomccsd_transition_data, section_records, i = (
+                parse_eomccsd_transition_mu_elements(
+                    lines, start=i, return_standardized_records=True
+                )
             )
+            
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+            
             if out.get("eomccsd_transition_dipoles", None) is None:
                 out["eomccsd_transition_dipoles"] = [eomccsd_transition_data]
             else:
@@ -175,6 +284,10 @@ def parse_terachem_output(
                 continue
 
         i += 1
+
+    out["excited_state_records"] = build_standardized_excited_records(
+        standardized_excited_records
+    )
 
     # Post-processing
     if out.get("casscf_energies") is not None:
@@ -326,9 +439,12 @@ def postprocess_casscf_energies(out):
     out["casscf_energies"] = o
 
 
-def parse_eomccsd_energies(lines: list, start: int) -> dict:
+def parse_eomccsd_energies(
+    lines: list, start: int, return_standardized_records: bool = False
+) -> dict:
     """Parse EOM-CCSD energy section from terachem output."""
     assert "EOM-CCSD Energies" in lines[start]
+    source = inspect.currentframe().f_code.co_name
 
     def state_line_parser(myline):
         parts = myline.strip().split()
@@ -340,9 +456,11 @@ def parse_eomccsd_energies(lines: list, start: int) -> dict:
         if len(parts) == 4:
             exc_energy_au = float(parts[2])
             exc_energy_ev = float(parts[3])
-        else:
+        elif len(parts) == 2:
             exc_energy_au = float("nan")
             exc_energy_ev = float("nan")
+        else:
+            raise ValueError(f"Unexpected EOM-CCSD energy line format: {myline}") 
 
         return dict(
             root=root,
@@ -353,6 +471,7 @@ def parse_eomccsd_energies(lines: list, start: int) -> dict:
 
     j = start + 1
     out = {}
+    standardized_records = []
     while j < len(lines):
         line = lines[j]
         stripped = line.strip()
@@ -378,13 +497,28 @@ def parse_eomccsd_energies(lines: list, start: int) -> dict:
 
         root = state_data.pop("root")
         out[root] = state_data
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=0,
+                state_j=root,
+                total_energy_au=state_data["total_energy_au"],
+                exc_energy_au=state_data["exc_energy_au"],
+                exc_energy_ev=state_data["exc_energy_ev"],
+            )
+        )
         j += 1
+    if return_standardized_records:
+        return out, standardized_records, j
     return out, j
 
 
-def parse_eomccsd_transition_properties(lines: list, start: int) -> dict:
+def parse_eomccsd_transition_properties(
+    lines: list, start: int, return_standardized_records: bool = False
+) -> dict:
     """Parse EOM-CCSD transition properties section from terachem output."""
     assert "EOM-CCSD Transition" in lines[start]
+    source = inspect.currentframe().f_code.co_name
 
     def transition_line_parser(myline):
         transition_match = re.match(r"\s*(\d+)\s*->\s*(\d+)\s+(.*)", myline)
@@ -399,6 +533,7 @@ def parse_eomccsd_transition_properties(lines: list, start: int) -> dict:
         if len(parts) == 2:
             return dict(
                 transition=transition,
+                exc_energy_au=float("nan"),
                 exc_energy_ev=float(parts[0]),
                 osc_strength=float(parts[1]),
             )
@@ -421,6 +556,7 @@ def parse_eomccsd_transition_properties(lines: list, start: int) -> dict:
 
     j = start + 1
     out = {}
+    standardized_records = []
     while j < len(lines):
         line = lines[j]
         stripped = line.strip()
@@ -442,10 +578,25 @@ def parse_eomccsd_transition_properties(lines: list, start: int) -> dict:
         if re.match(r"\s*\d+\s*->\s*\d+\s+", line) is None:
             break
         transition_data = transition_line_parser(line)
+        transition_match = re.match(r"\s*(\d+)\s*->\s*(\d+)\s+(.*)", line)
+        state_i = int(transition_match.group(1))
+        state_j = int(transition_match.group(2))
 
         transition = transition_data.pop("transition")
         out[transition] = transition_data
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=state_i,
+                state_j=state_j,
+                exc_energy_au=transition_data["exc_energy_au"],
+                exc_energy_ev=transition_data["exc_energy_ev"],
+                osc_strength=transition_data["osc_strength"],
+            )
+        )
         j += 1
+    if return_standardized_records:
+        return out, standardized_records, j
     return out, j
 
 
@@ -457,8 +608,11 @@ def is_eomccsd_transition_mu_line(myline: str) -> bool:
     )
 
 
-def parse_eomccsd_transition_mu_elements(lines: list, start: int) -> dict:
+def parse_eomccsd_transition_mu_elements(
+    lines: list, start: int, return_standardized_records: bool = False
+) -> dict:
     """Parse headerless EOM transition dipoles in '<i|mu|j>: x y z' format."""
+    source = inspect.currentframe().f_code.co_name
 
     def transition_mu_line_parser(myline):
         mu_match = re.match(
@@ -492,6 +646,7 @@ def parse_eomccsd_transition_mu_elements(lines: list, start: int) -> dict:
 
     j = start
     out = {}
+    standardized_records = []
     while j < len(lines):
         line = lines[j]
         stripped = line.strip()
@@ -507,17 +662,40 @@ def parse_eomccsd_transition_mu_elements(lines: list, start: int) -> dict:
             continue
 
         transition_data = transition_mu_line_parser(line)
+        transition_match = re.match(
+            r"\s*<\s*(\d+)\s*\|\s*mu\s*\|\s*(\d+)\s*>\s*:", line
+        )
+        state_i = int(transition_match.group(1))
+        state_j = int(transition_match.group(2))
         transition = transition_data.pop("transition")
         out[transition] = transition_data
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=state_i,
+                state_j=state_j,
+                Tx=transition_data["Tx"],
+                Ty=transition_data["Ty"],
+                Tz=transition_data["Tz"],
+                T_mag=transition_data["T_mag"],
+                osc_strength=transition_data["osc_strength"],
+            )
+        )
         j += 1
 
+    if return_standardized_records:
+        return out, standardized_records, j
     return out, j
 
 
 def parse_casscf_transition_dipole_section(
-    lines: list, start: int, multiplicity: Union[None, str] = None
+    lines: list,
+    start: int,
+    multiplicity: Union[None, str] = None,
+    return_standardized_records: bool = False,
 ) -> dict:
     """Parse a casscf-like transition dipole results section"""
+    source = inspect.currentframe().f_code.co_name
 
     def transition_dipole_line_parser(myline):
         transition_match = re.match(r"\s*(\d+)\s*->\s*(\d+)\s+(.*)", myline)
@@ -552,6 +730,7 @@ def parse_casscf_transition_dipole_section(
 
     j = start + 1
     out = {}
+    standardized_records = []
     while j < len(lines):
         line = lines[j]
         stripped = line.strip()
@@ -571,13 +750,34 @@ def parse_casscf_transition_dipole_section(
         except Exception:
             break
 
+        transition_match = re.match(r"\s*(\d+)\s*->\s*(\d+)\s+(.*)", line)
+        state_i = int(transition_match.group(1)) - 1 # is 1-indexed in TC output
+        state_j = int(transition_match.group(2)) - 1
         transition = td_data.pop("transition")
         out[transition] = td_data
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=state_i,
+                state_j=state_j,
+                multiplicity=multiplicity,
+                Tx=td_data["Tx"],
+                Ty=td_data["Ty"],
+                Tz=td_data["Tz"],
+                T_mag=td_data["T_mag"],
+                osc_strength=td_data["osc_strength"],
+            )
+        )
         j += 1
 
     if multiplicity is None:
-        return out, j
-    return {"multiplicity": multiplicity, "transitions": out}, j
+        section = out
+    else:
+        section = {"multiplicity": multiplicity, "transitions": out}
+
+    if return_standardized_records:
+        return section, standardized_records, j
+    return section, j
 
 
 def parse_tc_input_flags(lines: list, start: int) -> dict:
@@ -633,8 +833,11 @@ def parse_tc_input_flags(lines: list, start: int) -> dict:
     return out, j
 
 
-def parse_casscf_excited_state_section(lines: list, start: int) -> dict:
+def parse_casscf_excited_state_section(
+    lines: list, start: int, return_standardized_records: bool = False
+) -> dict:
     """Parse a casscf-like excited state results section"""
+    source = inspect.currentframe().f_code.co_name
 
     def check_end(myline):
         return not myline.strip()
@@ -688,6 +891,7 @@ def parse_casscf_excited_state_section(lines: list, start: int) -> dict:
 
     j = start + 1
     out = {}
+    standardized_records = []
     while j < len(lines):
         line = lines[j]
         stripped = line.strip()
@@ -712,12 +916,29 @@ def parse_casscf_excited_state_section(lines: list, start: int) -> dict:
 
         root = state_data.pop("root")
         out[root] = state_data
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=0,
+                state_j=root-1, # roots here are 1-indexed in TC output
+                multiplicity=state_data["multiplicity"],
+                total_energy_au=state_data["total_energy_au"],
+                exc_energy_au=state_data["exc_energy_au"],
+                exc_energy_ev=state_data["exc_energy_ev"],
+                exc_energy_nm=state_data["exc_energy_nm"],
+                osc_strength=state_data["osc_strength"],
+            )
+        )
         j += 1
 
+    if return_standardized_records:
+        return out, standardized_records, j
     return out, j
 
 
-def parse_excited_state_section(lines: list, start: int) -> dict:
+def parse_excited_state_section(
+    lines: list, start: int, return_standardized_records: bool = False
+) -> dict:
     """Parse an excited state results section from terachem output.
 
     Args:
@@ -725,6 +946,7 @@ def parse_excited_state_section(lines: list, start: int) -> dict:
         start (int): Index of the line where the excited state section starts.
     """
     assert "Final Excited State Results" in lines[start]
+    source = inspect.currentframe().f_code.co_name
 
     def check_end(myline):
         return myline.isspace()
@@ -733,8 +955,8 @@ def parse_excited_state_section(lines: list, start: int) -> dict:
         parts = myline.strip().split()
         out = {
             "root": int(parts[0]),
-            "abs_energy": float(parts[1]),
-            "exc_energy": float(parts[2]),
+            "total_energy_au": float(parts[1]),
+            "exc_energy_ev": float(parts[2]),
             "osc_strength": float(parts[3]),
             "s_squared": float(parts[4]),
             "max_ci_coeff": float(parts[5]),
@@ -744,11 +966,30 @@ def parse_excited_state_section(lines: list, start: int) -> dict:
     j = start + 4
 
     out = {}
+    standardized_records = []
     while not check_end(lines[j]):
         state_data = excited_state_line_parser(lines[j])
         root = state_data.pop("root")
         out[root] = state_data
+
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=0,
+                state_j=root,
+                total_energy_au=state_data["total_energy_au"],
+                # "Final Excited State Results" reports excitation energies in eV.
+                exc_energy_ev=state_data["exc_energy_ev"],
+                osc_strength=state_data["osc_strength"],
+                s_squared=state_data["s_squared"],
+                max_ci_coeff=state_data["max_ci_coeff"],
+            )
+
+        )
         j += 1
+
+    if return_standardized_records:
+        return out, standardized_records, j
     return out, j
 
 

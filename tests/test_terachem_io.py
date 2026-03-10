@@ -98,8 +98,8 @@ def test_parse_terachem_output():
     es_entry = 5
     root = 1
 
-    assert parsed["excited_states"][es_entry - 1][root]["abs_energy"] == -248.27323993
-    assert parsed["excited_states"][es_entry - 1][root]["exc_energy"] == 4.04505765
+    assert parsed["excited_states"][es_entry - 1][root]["total_energy_au"] == -248.27323993
+    assert parsed["excited_states"][es_entry - 1][root]["exc_energy_ev"] == 4.04505765
     assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0030
     assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
     assert parsed["excited_states"][es_entry - 1][root]["max_ci_coeff"] == -0.737191
@@ -111,8 +111,8 @@ def test_parse_terachem_output():
     assert len(parsed["excited_states"][es_entry - 1]) == 10
 
     root = 10
-    assert parsed["excited_states"][es_entry - 1][root]["abs_energy"] == -248.05883516
-    assert parsed["excited_states"][es_entry - 1][root]["exc_energy"] == 9.87930744
+    assert parsed["excited_states"][es_entry - 1][root]["total_energy_au"] == -248.05883516
+    assert parsed["excited_states"][es_entry - 1][root]["exc_energy_ev"] == 9.87930744
     assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0014
     assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
     assert parsed["excited_states"][es_entry - 1][root]["max_ci_coeff"] == 0.639490
@@ -136,6 +136,13 @@ def test_parse_hhtda_superset_casscf_energy_header():
     assert parsed["casscf_energies"][2]["exc_energy_ev"] == [4.03751706]
     assert parsed["casscf_energies"][2]["exc_energy_nm"] == [307.08688619]
     assert parsed["casscf_energies"][2]["osc_strength"] == [0.003]
+
+    records = parsed["excited_state_records"]
+    assert len(records) == 2
+    assert records[0]["source"] == "parse_casscf_excited_state_section"
+    assert records[0]["state_i"] == 0 # terachem hhtda/casscf-like tables are 1-indexed
+    assert records[0]["state_j"] == 0 # ground state
+    assert records[1]["exc_energy_nm"] == 307.08688619
 
 
 def test_parse_casscf_orbitals_without_occupations(tmp_path):
@@ -230,6 +237,21 @@ def test_parse_eomccsd_energies_and_transition_properties():
     assert transitions["0 -> 1"]["osc_strength"] == 0.88155009
     assert transitions["2 -> 3"]["exc_energy_ev"] == 0.26679639
 
+    state_records = [
+        r
+        for r in parsed["excited_state_records"]
+        if r["source"] == "parse_eomccsd_energies"
+    ]
+    transition_records = [
+        r
+        for r in parsed["excited_state_records"]
+        if r["source"] == "parse_eomccsd_transition_properties"
+    ]
+    assert len(state_records) == 4
+    assert len(transition_records) == 6
+    assert transition_records[0]["state_i"] == 0
+    assert transition_records[0]["state_j"] == 1
+
 
 def test_parse_eomccsd_transition_mu_elements():
     """Headerless <i|mu|j>: x y z lines should parse as transition dipoles."""
@@ -269,6 +291,16 @@ def test_parse_eomccsd_transition_mu_elements():
     assert transitions["1 -> 0"]["Tz"] == 1.742941
     assert transitions["2 -> 3"]["Tz"] == -0.727510
     assert transitions["3 -> 2"]["Tz"] == -0.688314
+
+    mu_records = [
+        r
+    for r in parsed["excited_state_records"]
+    if r["source"] == "parse_eomccsd_transition_mu_elements"
+    ]
+    assert len(mu_records) == 12
+    assert mu_records[0]["state_i"] == 0
+    assert mu_records[0]["state_j"] == 1
+    assert mu_records[0]["Tx"] == 2.219085
 
 
 def test_parse_eomccsd_transition_properties_rejects_five_values():
