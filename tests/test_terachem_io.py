@@ -98,7 +98,9 @@ def test_parse_terachem_output():
     es_entry = 5
     root = 1
 
-    assert parsed["excited_states"][es_entry - 1][root]["total_energy_au"] == -248.27323993
+    assert (
+        parsed["excited_states"][es_entry - 1][root]["total_energy_au"] == -248.27323993
+    )
     assert parsed["excited_states"][es_entry - 1][root]["exc_energy_ev"] == 4.04505765
     assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0030
     assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
@@ -111,7 +113,9 @@ def test_parse_terachem_output():
     assert len(parsed["excited_states"][es_entry - 1]) == 10
 
     root = 10
-    assert parsed["excited_states"][es_entry - 1][root]["total_energy_au"] == -248.05883516
+    assert (
+        parsed["excited_states"][es_entry - 1][root]["total_energy_au"] == -248.05883516
+    )
     assert parsed["excited_states"][es_entry - 1][root]["exc_energy_ev"] == 9.87930744
     assert parsed["excited_states"][es_entry - 1][root]["osc_strength"] == 0.0014
     assert parsed["excited_states"][es_entry - 1][root]["s_squared"] == 0.0000
@@ -140,8 +144,8 @@ def test_parse_hhtda_superset_casscf_energy_header():
     records = parsed["excited_state_records"]
     assert len(records) == 2
     assert records[0]["source"] == "parse_casscf_excited_state_section"
-    assert records[0]["state_i"] == 0 # terachem hhtda/casscf-like tables are 1-indexed
-    assert records[0]["state_j"] == 0 # ground state
+    assert records[0]["state_i"] == 0  # terachem hhtda/casscf-like tables are 1-indexed
+    assert records[0]["state_j"] == 0  # ground state
     assert records[1]["exc_energy_nm"] == 307.08688619
 
 
@@ -294,8 +298,8 @@ def test_parse_eomccsd_transition_mu_elements():
 
     mu_records = [
         r
-    for r in parsed["excited_state_records"]
-    if r["source"] == "parse_eomccsd_transition_mu_elements"
+        for r in parsed["excited_state_records"]
+        if r["source"] == "parse_eomccsd_transition_mu_elements"
     ]
     assert len(mu_records) == 12
     assert mu_records[0]["state_i"] == 0

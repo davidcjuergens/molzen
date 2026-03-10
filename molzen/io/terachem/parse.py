@@ -148,7 +148,7 @@ def parse_terachem_output(
             excited_state_data, section_records, i = parse_excited_state_section(
                 lines, start=i, return_standardized_records=True
             )
-            
+
             for record in section_records:
                 record["section_idx"] = section_idx
             standardized_excited_records.extend(section_records)
@@ -166,11 +166,11 @@ def parse_terachem_output(
             excited_state_data, section_records, i = parse_casscf_excited_state_section(
                 lines, start=i, return_standardized_records=True
             )
-            
+
             for record in section_records:
                 record["section_idx"] = section_idx
             standardized_excited_records.extend(section_records)
-            
+
             if out.get("casscf_energies", None) is None:
                 out["casscf_energies"] = [excited_state_data]
             else:
@@ -198,7 +198,7 @@ def parse_terachem_output(
             for record in section_records:
                 record["section_idx"] = section_idx
             standardized_excited_records.extend(section_records)
-            
+
             if out.get("casscf_transition_dipoles", None) is None:
                 out["casscf_transition_dipoles"] = [transition_dipole_data]
             else:
@@ -220,11 +220,11 @@ def parse_terachem_output(
             eomccsd_energy_data, section_records, i = parse_eomccsd_energies(
                 lines, start=i, return_standardized_records=True
             )
-            
+
             for record in section_records:
                 record["section_idx"] = section_idx
             standardized_excited_records.extend(section_records)
-            
+
             if out.get("eomccsd_energies", None) is None:
                 out["eomccsd_energies"] = [eomccsd_energy_data]
             else:
@@ -239,11 +239,11 @@ def parse_terachem_output(
                     lines, start=i, return_standardized_records=True
                 )
             )
-            
+
             for record in section_records:
                 record["section_idx"] = section_idx
             standardized_excited_records.extend(section_records)
-            
+
             if out.get("eomccsd_transition", None) is None:
                 out["eomccsd_transition"] = [eomccsd_transition_data]
             else:
@@ -258,11 +258,11 @@ def parse_terachem_output(
                     lines, start=i, return_standardized_records=True
                 )
             )
-            
+
             for record in section_records:
                 record["section_idx"] = section_idx
             standardized_excited_records.extend(section_records)
-            
+
             if out.get("eomccsd_transition_dipoles", None) is None:
                 out["eomccsd_transition_dipoles"] = [eomccsd_transition_data]
             else:
@@ -460,7 +460,7 @@ def parse_eomccsd_energies(
             exc_energy_au = float("nan")
             exc_energy_ev = float("nan")
         else:
-            raise ValueError(f"Unexpected EOM-CCSD energy line format: {myline}") 
+            raise ValueError(f"Unexpected EOM-CCSD energy line format: {myline}")
 
         return dict(
             root=root,
@@ -751,7 +751,7 @@ def parse_casscf_transition_dipole_section(
             break
 
         transition_match = re.match(r"\s*(\d+)\s*->\s*(\d+)\s+(.*)", line)
-        state_i = int(transition_match.group(1)) - 1 # is 1-indexed in TC output
+        state_i = int(transition_match.group(1)) - 1  # is 1-indexed in TC output
         state_j = int(transition_match.group(2)) - 1
         transition = td_data.pop("transition")
         out[transition] = td_data
@@ -920,7 +920,7 @@ def parse_casscf_excited_state_section(
             make_standardized_excited_record(
                 source=source,
                 state_i=0,
-                state_j=root-1, # roots here are 1-indexed in TC output
+                state_j=root - 1,  # roots here are 1-indexed in TC output
                 multiplicity=state_data["multiplicity"],
                 total_energy_au=state_data["total_energy_au"],
                 exc_energy_au=state_data["exc_energy_au"],
@@ -984,7 +984,6 @@ def parse_excited_state_section(
                 s_squared=state_data["s_squared"],
                 max_ci_coeff=state_data["max_ci_coeff"],
             )
-
         )
         j += 1
 
