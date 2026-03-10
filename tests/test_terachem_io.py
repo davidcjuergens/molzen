@@ -7,11 +7,10 @@ import pytest
 
 from molzen.io.terachem.parse import parse_terachem_output
 
-pytestmark = pytest.mark.local_only
-
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+@pytest.mark.local_only
 def test_parse_casscf_optimization():
     """Tests the parsing of a CASSCF optimization output file from terachem."""
     output_path = os.path.join(THIS_DIR, "data/terachem_casscf_s0_opt.out")
@@ -41,6 +40,7 @@ def test_parse_casscf_optimization():
     assert len(parsed["casscf_orbitals"]) == 8
 
 
+@pytest.mark.local_only
 def test_parse_terachem_output():
     """Tests parsing of terachem output file"""
     example_output_path = os.path.join(THIS_DIR, "data/terachem_example_output.out")
@@ -254,8 +254,8 @@ def test_parse_eomccsd_transition_mu_elements():
 """
     parsed = parse_terachem_output(raw, raw_str_in=True)
 
-    assert "eomccsd_transition_mu" in parsed
-    transitions = parsed["eomccsd_transition_mu"][0]
+    assert "eomccsd_transition_dipoles" in parsed
+    transitions = parsed["eomccsd_transition_dipoles"][0]
     assert transitions["0 -> 1"]["Tx"] == 2.219085
     assert transitions["0 -> 1"]["Ty"] == 1.672374
     assert transitions["0 -> 1"]["Tz"] == 1.575919
