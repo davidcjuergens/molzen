@@ -178,7 +178,8 @@ def make_terachem_job_array(
 
     # ensure no log path collisions
     assert len(log_paths) == len(set(log_paths)), (
-        "Log path collisions detected, please supply manual tags to disambiguate"
+        "Log path collisions detected, please supply manual tags to disambiguate:\n"
+        + "\n".join(log_paths)
     )
 
     # write out jobs to a task array
