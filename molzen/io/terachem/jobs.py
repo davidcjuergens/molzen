@@ -99,6 +99,7 @@ def make_terachem_job_array(
     task_filename: str = "terachem_tasks.txt",
     constraint_lists: Optional[List[List[str]]] = None,
     scrdir: Optional[str] = None,
+    make_scrdir: bool = True,
 ):
     """Make a batch of terachem jobs that can be executed
 
@@ -113,8 +114,9 @@ def make_terachem_job_array(
         constraint_lists: optional list of constraint lists. if tc_kwargs is a dict, this should be only one list of constraints.
                           If tc_kwargs is a list of dicts, this should be a list of lists of constraints, one per job.
         scrdir: optional path for dumping terachem scratch dirs and job log files. If not provided, will be workdir.
+        make_scrdir: have this function create the base scrdir
     """
-    if scrdir is not None:
+    if scrdir is not None and make_scrdir:
         os.makedirs(scrdir, exist_ok=False)
 
     if constraint_lists is not None:
