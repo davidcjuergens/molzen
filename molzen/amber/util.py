@@ -8,7 +8,7 @@ import pytraj as pt
 
 # Compute frozen indices
 def get_nonqm_frozen_indices_1idx(
-    prmtop: str, crds: str, ligand_mask: str, dcut: float, qm_region_0idx: list
+    prmtop: str, crds: str, ligand_mask: str, dcut: float, qm_region_0idx: list | str
 ) -> list:
     """Compute frozen indices according to distance cutoff from ligand taht are not in the QM region.
 
@@ -17,10 +17,15 @@ def get_nonqm_frozen_indices_1idx(
         crds (str): Path to the coordinate file (rst7).
         ligand_mask (str): cpptraj selection mask for the ligand (e.g., ':JF4').
         dcut (float): Distance cutoff in Angstroms.
-        qm_region_0idx (list of int): List of 0-indexed atom indices in the QM region.
+        qm_region_0idx (list of int or str):
+            if list: list of 0-indexed atom indices in the QM region
+            if str: path to text file containing 0-indexed atom indices in the QM region, one per line
     Returns:
         list of int: List of 1-indexed atom indices to freeze.
     """
+    if isinstance(qm_region_0idx, str):
+        with open(qm_region_0idx, "r") as f:
+            qm_region_0idx = [int(line.strip()) for line in f if line.strip()]
 
     traj = pt.load(crds, top=prmtop)
     # set reference frame to first frame
