@@ -6,11 +6,54 @@ import numpy as np
 import pytraj as pt
 
 
-# Compute frozen indices
+def get_nonqm_frozen_indices_1idx_cpptraj(
+    prmtop: str,
+    crds: str,
+    ligand_mask: str,
+    dcut: float,
+    qm_region_0idx: list[int] | str,
+    cpptraj_exe: str = "cpptraj",
+) -> list[int]:
+    """
+    Return 1-indexed atom indices farther than dcut from ligand_mask,
+    excluding QM-region atoms, using cpptraj.
+    """
+    if isinstance(qm_region_0idx, str):
+        with open(qm_region_0idx, "r") as f:
+            qm_region_0idx = [int(line.strip()) for line in f if line.strip()]
+    qm_region_0idx = set(qm_region_0idx)
+
+    if not os.path.exists(prmtop):
+        raise FileNotFoundError(f"prmtop not found: {prmtop}")
+    if not os.path.exists(crds):
+        raise FileNotFoundError(f"coordinate file not found: {crds}")
+
+    mask_expr = f"({ligand_mask}>:{dcut})"
+
+    # cpptraj wants a reference structure for distance calc. Set crds as input and reference.
+    cpptraj_input = f'{cpptraj_exe} -p {prmtop} -y {crds} -c {crds} -ms "({mask_expr})"'
+    result = subprocess.run(cpptraj_input, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"cpptraj failed: {result.stderr}")
+
+    # parse the cpptraj output
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("Selected="):
+            # cpptraj -ms returns 1-indexed atom numbers in the "Selected=" line
+            selected_1idx = line.replace("Selected=", "").strip().split()
+            selected_0idx = [int(idx) - 1 for idx in selected_1idx]
+
+    # add only those that are not in the QM region
+    frozen_0idx = [idx for idx in selected_0idx if idx not in qm_region_0idx]
+    frozen_1idx = [idx + 1 for idx in frozen_0idx]
+    return frozen_1idx
+
+
 def get_nonqm_frozen_indices_1idx(
     prmtop: str, crds: str, ligand_mask: str, dcut: float, qm_region_0idx: list | str
 ) -> list:
-    """Compute frozen indices according to distance cutoff from ligand taht are not in the QM region.
+    """Compute frozen indices according to distance cutoff from ligand that are not in the QM region.
 
     Args:
         prmtop (str): Path to the topology file.
