@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 
 import numpy as np
 
+from molzen.ptable import symbol_to_z
 from . import hdf5 as hdf5_io
 from . import mol2 as mol2_io
 from . import npy as npy_io
@@ -30,7 +31,15 @@ class Molecule(Mapping[str, Any]):
     hetatm: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    _MAPPING_FIELDS = ("xyz", "atom_names", "elements", "comments", "seq", "hetatm")
+    _MAPPING_FIELDS = (
+        "xyz",
+        "atom_names",
+        "elements",
+        "Z",
+        "comments",
+        "seq",
+        "hetatm",
+    )
 
     def __post_init__(self) -> None:
         if self.xyz is not None:
@@ -104,6 +113,12 @@ class Molecule(Mapping[str, Any]):
         if not parts:
             return "Molecule()"
         return f"Molecule({', '.join(parts)})"
+
+    @property
+    def Z(self) -> np.ndarray | None:
+        if self.elements is None:
+            return None
+        return np.array([symbol_to_z[e.capitalize()] for e in self.elements], dtype=int)
 
     @classmethod
     def from_xyz(cls, file_path: str) -> Molecule:
