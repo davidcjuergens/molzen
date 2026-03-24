@@ -142,9 +142,7 @@ class Molecule(Mapping[str, Any]):
         metadata: dict[str, Any] | None,
     ) -> str:
         """Infer which legacy shape conventions should be preserved."""
-        if metadata and (
-            "pdb_records" in metadata or "pdb_raw_lines" in metadata
-        ):
+        if metadata and ("pdb_records" in metadata or "pdb_raw_lines" in metadata):
             return "pdb"
         if seq is not None:
             return "pdb"
@@ -167,7 +165,9 @@ class Molecule(Mapping[str, Any]):
     def _set_atom_records(self, atom_records: np.ndarray) -> None:
         """Validate and store canonical atom records."""
         records = self._coerce_atom_records(atom_records)
-        if self._comments is not None and len(self._comments) != self._frame_count(records):
+        if self._comments is not None and len(self._comments) != self._frame_count(
+            records
+        ):
             raise ValueError("comments length must match number of coordinate frames.")
         self._atom_records = records
 
@@ -216,9 +216,7 @@ class Molecule(Mapping[str, Any]):
         return list(comments)
 
     @staticmethod
-    def _infer_entity_kind(
-        record_name: str, res_name: str, element: str = ""
-    ) -> str:
+    def _infer_entity_kind(record_name: str, res_name: str, element: str = "") -> str:
         """Assign a coarse entity label from record-level metadata."""
         record_name = record_name.strip().upper()
         res_name = res_name.strip().upper()
@@ -364,7 +362,14 @@ class Molecule(Mapping[str, Any]):
         """Adapt MOL2-style payload data into canonical atom_records."""
         if hetatm is not None and len(hetatm) > 0:
             dtype_names = set(hetatm.dtype.names or ())
-            required = {"atom_idx", "atom_name", "atom_type", "element", "res_name", "xyz"}
+            required = {
+                "atom_idx",
+                "atom_name",
+                "atom_type",
+                "element",
+                "res_name",
+                "xyz",
+            }
             if required.issubset(dtype_names):
                 coords = np.asarray(hetatm["xyz"], dtype=float)
                 atom_records = self._build_atom_records_from_atom_major(
@@ -393,7 +398,9 @@ class Molecule(Mapping[str, Any]):
             atom_types=elements,
         )
 
-    def _build_atom_records_from_pdb_records(self, pdb_records: np.ndarray) -> np.ndarray:
+    def _build_atom_records_from_pdb_records(
+        self, pdb_records: np.ndarray
+    ) -> np.ndarray:
         """Convert parsed PDB ATOM/HETATM records into canonical atom_records."""
         atom_records = np.zeros(len(pdb_records), dtype=atom_record_dtype(1))
         atom_records["atom_index"] = np.arange(len(pdb_records), dtype=int)
@@ -440,7 +447,9 @@ class Molecule(Mapping[str, Any]):
             if grid.ndim != 3 or grid.shape[2] != 3:
                 raise ValueError("PDB xyz must have shape (Nres, Natom, 3).")
             if len(seq) != grid.shape[0]:
-                raise ValueError("Sequence length must match number of residues in xyz.")
+                raise ValueError(
+                    "Sequence length must match number of residues in xyz."
+                )
             for i, seq_token in enumerate(seq):
                 res_name = aa_1_to_3[seq_token] if len(seq_token) == 1 else seq_token
                 atom_map = _PDB_ATOM_INDEX[aa2num[res_name]]
@@ -467,7 +476,9 @@ class Molecule(Mapping[str, Any]):
                     atom_records[cursor]["record_name"] = "ATOM"
                     atom_records[cursor]["entity_kind"] = "polymer"
                     atom_records[cursor]["atom_name"] = atom_name
-                    atom_records[cursor]["element"] = pdb_io._infer_element(atom_name, atom_name)
+                    atom_records[cursor]["element"] = pdb_io._infer_element(
+                        atom_name, atom_name
+                    )
                     atom_records[cursor]["res_name"] = res_name
                     atom_records[cursor]["chain_id"] = ""
                     atom_records[cursor]["res_num"] = residue_index + 1
@@ -486,7 +497,9 @@ class Molecule(Mapping[str, Any]):
             required = {"atom_name", "res_name", "chain_id", "res_num", "xyz"}
             if not required.issubset(dtype_names):
                 missing = sorted(required - dtype_names)
-                raise ValueError(f"PDB hetatm array is missing required fields: {missing}")
+                raise ValueError(
+                    f"PDB hetatm array is missing required fields: {missing}"
+                )
 
             for row in hetatm:
                 atom_name = str(row["atom_name"])
@@ -502,7 +515,9 @@ class Molecule(Mapping[str, Any]):
                     pdb_io._infer_element(atom_name, atom_name),
                 )
                 atom_records[cursor]["atom_name"] = atom_name
-                atom_records[cursor]["element"] = pdb_io._infer_element(atom_name, atom_name)
+                atom_records[cursor]["element"] = pdb_io._infer_element(
+                    atom_name, atom_name
+                )
                 atom_records[cursor]["res_name"] = res_name
                 atom_records[cursor]["chain_id"] = chain_id
                 atom_records[cursor]["res_num"] = res_num
@@ -620,9 +635,8 @@ class Molecule(Mapping[str, Any]):
     def _polymer_mask(self) -> np.ndarray:
         if self._atom_records is None:
             return np.zeros(0, dtype=bool)
-        return (
-            (self._atom_records["record_name"] == "ATOM")
-            | (self._atom_records["entity_kind"] == "polymer")
+        return (self._atom_records["record_name"] == "ATOM") | (
+            self._atom_records["entity_kind"] == "polymer"
         )
 
     def _polymer_residue_order(self) -> list[int]:
@@ -658,9 +672,15 @@ class Molecule(Mapping[str, Any]):
 
     def _legacy_pdb_view(self) -> dict[str, Any]:
         """Derive residue-grid polymer data and PDB HETATM rows."""
-        n_frames = self._frame_count(self._atom_records) if self._atom_records is not None else 1
+        n_frames = (
+            self._frame_count(self._atom_records)
+            if self._atom_records is not None
+            else 1
+        )
         if n_frames != 1:
-            raise ValueError("PDB compatibility views require single-frame coordinates.")
+            raise ValueError(
+                "PDB compatibility views require single-frame coordinates."
+            )
 
         polymer_rows = self._polymer_residue_rows()
         polymer_xyz = np.full((len(polymer_rows), 27, 3), np.nan, dtype=float)
@@ -711,13 +731,19 @@ class Molecule(Mapping[str, Any]):
         if self._atom_records is None:
             return np.array([], dtype=mol2_io.MOL2_HETATM_DTYPES)
         if self._frame_count(self._atom_records) != 1:
-            raise ValueError("MOL2 compatibility views require single-frame coordinates.")
+            raise ValueError(
+                "MOL2 compatibility views require single-frame coordinates."
+            )
 
         rows = self._atom_records
         hetatm = np.zeros(len(rows), dtype=mol2_io.MOL2_HETATM_DTYPES)
-        hetatm["atom_idx"] = np.where(rows["serial"] > 0, rows["serial"], rows["atom_index"] + 1)
+        hetatm["atom_idx"] = np.where(
+            rows["serial"] > 0, rows["serial"], rows["atom_index"] + 1
+        )
         hetatm["atom_name"] = rows["atom_name"]
-        hetatm["atom_type"] = np.where(rows["atom_type"] != "", rows["atom_type"], rows["element"])
+        hetatm["atom_type"] = np.where(
+            rows["atom_type"] != "", rows["atom_type"], rows["element"]
+        )
         hetatm["element"] = rows["element"]
         hetatm["res_name"] = np.where(rows["res_name"] != "", rows["res_name"], "MOL")
         hetatm["xyz"] = rows["coords"][:, 0, :]
@@ -787,7 +813,11 @@ class Molecule(Mapping[str, Any]):
         """Return a dictionary representation of the molecule."""
         if include_none:
             data = {
-                field: (self.atom_records if field == "atom_records" else getattr(self, field))
+                field: (
+                    self.atom_records
+                    if field == "atom_records"
+                    else getattr(self, field)
+                )
                 for field in self._MAPPING_FIELDS
                 if include_atom_records or field != "atom_records"
             }
@@ -841,7 +871,9 @@ class Molecule(Mapping[str, Any]):
             self._comments = None
             return
         comments = list(value)
-        if self._atom_records is not None and len(comments) != self._frame_count(self._atom_records):
+        if self._atom_records is not None and len(comments) != self._frame_count(
+            self._atom_records
+        ):
             raise ValueError("comments length must match number of coordinate frames.")
         self._comments = comments
 
