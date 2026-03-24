@@ -17,7 +17,7 @@ def _require_nglview() -> Any:
     except ImportError as exc:
         raise ImportError(
             "nglview is required for Molecule.show(). "
-            "Install molzen[viz] or pip install nglview. "
+            "Install molzen[viz] for visualization dependencies."
             f"Original import error: {exc}"
         ) from exc
     return nv
@@ -68,7 +68,9 @@ def _pdb_lines_for_frame(atom_records: np.ndarray, frame_index: int) -> list[str
     lines: list[str] = []
     for i, row in enumerate(atom_records, start=1):
         record_name = _viewer_record_name(row)
-        serial = int(row["serial"]) if int(row["serial"]) > 0 else int(row["atom_index"]) + 1
+        serial = (
+            int(row["serial"]) if int(row["serial"]) > 0 else int(row["atom_index"]) + 1
+        )
         atom_name = _viewer_atom_name(row, i)
         alt_loc = str(row["alt_loc"]).strip()[:1]
         res_name = (str(row["res_name"]).strip() or "MOL")[:3]
@@ -117,6 +119,32 @@ def _pdb_text(atom_records: np.ndarray, frame: int | None = None) -> str:
     return "".join(chunks)
 
 
+def _structure_trajectory(atom_records: np.ndarray, nv: Any) -> Any:
+    """Build an nglview Structure/Trajectory adaptor from atom_records."""
+
+    class AtomRecordStructureTrajectory(nv.Structure, nv.Trajectory):
+        """Minimal nglview adaptor backed by canonical atom_records."""
+
+        def __init__(self, records: np.ndarray) -> None:
+            nv.Structure.__init__(self)
+            nv.Trajectory.__init__(self)
+            self.ext = "pdb"
+            self.params = {}
+            self._records = records
+
+        def get_structure_string(self) -> str:
+            return _pdb_text(self._records, frame=0)
+
+        def get_coordinates(self, index: int) -> np.ndarray:
+            return np.asarray(self._records["coords"][:, index, :], dtype=float)
+
+        @property
+        def n_frames(self) -> int:
+            return _frame_count(self._records)
+
+    return AtomRecordStructureTrajectory(atom_records)
+
+
 def show_molecule(
     mol: Molecule,
     *,
@@ -130,8 +158,12 @@ def show_molecule(
         raise ValueError("Cannot visualize an empty molecule.")
 
     nv = _require_nglview()
-    pdb_text = _pdb_text(atom_records, frame=frame)
-    view = nv.show_text(pdb_text)
+    if frame is None and _frame_count(atom_records) > 1:
+        view = nv.NGLWidget(_structure_trajectory(atom_records, nv), gui=True)
+    else:
+        pdb_text = _pdb_text(atom_records, frame=frame)
+        view = nv.show_text(pdb_text)
+
     view.add_ball_and_stick()
     view.layout.width = width
     view.layout.height = height
