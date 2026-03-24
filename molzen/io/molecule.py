@@ -1015,6 +1015,22 @@ class Molecule(Mapping[str, Any]):
             return None
         return np.array([symbol_to_z[e.capitalize()] for e in elements], dtype=int)
 
+    def show(
+        self,
+        *,
+        width: int = 300,
+        height: int = 300,
+        frame: int | None = None,
+    ) -> Any:
+        """Return an nglview widget for the molecule."""
+
+        # optional dependency, so lazy import
+        from molzen.visualize import show_molecule
+
+        width_str = f"{width}px"
+        height_str = f"{height}px"
+        return show_molecule(self, width=width_str, height=height_str, frame=frame)
+
     @classmethod
     def from_xyz(cls, file_path: str) -> Molecule:
         """Load a molecule from an XYZ file path."""
