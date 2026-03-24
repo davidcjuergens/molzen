@@ -13,16 +13,18 @@ def test_parse_1prw(tmp_path):
     out = Molecule.from_pdb(str(pdb_file))
     assert isinstance(out, Molecule)
 
-    xyz = out["xyz"]  # (Nres, 27, 3)
+    xyz = out["xyz"]  # (Natoms, 3)
+    polymer_xyz = out["polymer_xyz"]  # (Nres, 27, 3)
     seq = out["seq"]  # (Nres, )
 
-    assert xyz.shape == (147, 27, 3)
+    assert xyz.shape == (len(out.atom_records), 3)
+    assert polymer_xyz.shape == (147, 27, 3)
     assert len(seq) == 147
 
     assert seq[21] == "D"
-    assert xyz[21, 0, 0] == 58.797
+    assert polymer_xyz[21, 0, 0] == 58.797
     assert seq[54] == "V"
-    assert xyz[54, 3, 2] == 0.477
+    assert polymer_xyz[54, 3, 2] == 0.477
 
     assert "hetatm" in out
     hetatm = out["hetatm"]  # np.ndarray with dtype HETATM_DTYPES
@@ -32,5 +34,6 @@ def test_parse_1prw(tmp_path):
     out.to_pdb(str(out_file))
     out_roundtrip = Molecule.from_pdb(str(out_file))
     assert out_roundtrip["xyz"].shape == xyz.shape
+    assert out_roundtrip["polymer_xyz"].shape == polymer_xyz.shape
     assert out_roundtrip["seq"] == seq
     assert "pdb_records" in out_roundtrip.metadata

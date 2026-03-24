@@ -81,6 +81,7 @@ class Molecule(Mapping[str, Any]):
     _MAPPING_FIELDS = (
         "atom_records",
         "xyz",
+        "polymer_xyz",
         "atom_names",
         "elements",
         "Z",
@@ -564,6 +565,27 @@ class Molecule(Mapping[str, Any]):
             raise ValueError("xyz is required when atom_records is not provided.")
         return self._build_atom_records_from_xyz_payload(xyz=xyz, elements=elements)
 
+    def _replace_coords(self, xyz: np.ndarray) -> None:
+        """Replace canonical coordinates while preserving atom metadata."""
+        if self._atom_records is None:
+            raise ValueError("atom_records must exist before setting xyz directly.")
+
+        coords = self._normalize_atom_major_xyz(xyz)
+        n_frames, n_atoms, _ = coords.shape
+        if n_atoms != len(self._atom_records):
+            raise ValueError("xyz atom count must match existing atom_records.")
+        if self._comments is not None and len(self._comments) != n_frames:
+            raise ValueError("comments length must match number of coordinate frames.")
+
+        updated = np.zeros(len(self._atom_records), dtype=atom_record_dtype(n_frames))
+        for name in updated.dtype.names or ():
+            if name == "coords":
+                continue
+            updated[name] = self._atom_records[name]
+        updated["coords"] = np.swapaxes(coords, 0, 1)
+        self._atom_records = updated
+        self._clear_stale_pdb_metadata()
+
     def _clear_stale_pdb_metadata(self) -> None:
         """Drop cached raw PDB metadata after canonical edits."""
         self._metadata.pop("pdb_raw_lines", None)
@@ -584,7 +606,7 @@ class Molecule(Mapping[str, Any]):
 
         if target_view == "pdb":
             payload = self._legacy_pdb_view()
-            new_xyz = payload["xyz"] if xyz is _MISSING else xyz
+            new_xyz = payload["polymer_xyz"] if xyz is _MISSING else xyz
             new_seq = self.seq if seq is _MISSING else seq
             new_hetatm = payload["hetatm"] if hetatm is _MISSING else hetatm
 
@@ -720,7 +742,7 @@ class Molecule(Mapping[str, Any]):
             hetatm = np.array([], dtype=pdb_io.HETATM_DTYPES)
 
         return {
-            "xyz": polymer_xyz,
+            "polymer_xyz": polymer_xyz,
             "seq_tokens": seq_tokens,
             "chains": chains,
             "hetatm": hetatm,
@@ -754,7 +776,7 @@ class Molecule(Mapping[str, Any]):
         payload: dict[str, Any] = {}
         if self._legacy_view == "pdb":
             pdb_view = self._legacy_pdb_view()
-            payload["xyz"] = pdb_view["xyz"]
+            payload["xyz"] = pdb_view["polymer_xyz"]
             payload["seq"] = self.seq
             if len(pdb_view["hetatm"]):
                 payload["hetatm"] = pdb_view["hetatm"]
@@ -833,6 +855,8 @@ class Molecule(Mapping[str, Any]):
             parts.append(f"frames={self._frame_count(self.atom_records)}")
         if self.xyz is not None:
             parts.append(f"xyz_shape={tuple(np.asarray(self.xyz).shape)}")
+        if self.polymer_xyz is not None:
+            parts.append(f"polymer_xyz_shape={tuple(self.polymer_xyz.shape)}")
         if self.atom_names is not None:
             parts.append(f"atom_names={len(self.atom_names)}")
         if self.elements is not None:
@@ -887,10 +911,9 @@ class Molecule(Mapping[str, Any]):
 
     @property
     def xyz(self) -> np.ndarray | None:
+        """Return atom-major coordinates for all atoms."""
         if self._atom_records is None:
             return None
-        if self._legacy_view == "pdb" and np.any(self._polymer_mask()):
-            return self._legacy_pdb_view()["xyz"]
         return self._atom_major_xyz()
 
     @xyz.setter
@@ -898,8 +921,29 @@ class Molecule(Mapping[str, Any]):
         if value is None:
             self._atom_records = None
             return
-        target_view = "pdb" if self._legacy_view == "pdb" else "xyz"
-        self._update_from_legacy(xyz=value, legacy_view=target_view)
+        if self._atom_records is None:
+            self._legacy_view = "xyz"
+            self._set_atom_records(
+                self._build_atom_records_from_xyz_payload(
+                    xyz=value,
+                    elements=self.elements,
+                )
+            )
+            return
+        self._replace_coords(value)
+
+    @property
+    def polymer_xyz(self) -> np.ndarray | None:
+        """Return residue-major polymer coordinates for PDB-style workflows."""
+        if self._atom_records is None or not np.any(self._polymer_mask()):
+            return None
+        return self._legacy_pdb_view()["polymer_xyz"]
+
+    @polymer_xyz.setter
+    def polymer_xyz(self, value: np.ndarray | None) -> None:
+        if value is None:
+            return
+        self._update_from_legacy(xyz=value, legacy_view="pdb")
 
     @property
     def atom_names(self) -> list[str] | None:
@@ -1024,7 +1068,7 @@ class Molecule(Mapping[str, Any]):
             )
 
         pdb_view = self._legacy_pdb_view()
-        pdb_xyz = pdb_view["xyz"]
+        pdb_xyz = pdb_view["polymer_xyz"]
         seq_tokens = pdb_view["seq_tokens"]
         pdb_chains = chains if chains is not None else pdb_view["chains"]
         return pdb_io.write_pdb(
