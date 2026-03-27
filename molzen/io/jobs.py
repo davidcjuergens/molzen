@@ -392,7 +392,7 @@ parallel --jobs "$JOBS_IN_FLIGHT" --joblog "$JOBLOG" {resume_flag} --line-buffer
             echo \\"[srun host=$(hostname) procid=${{SLURM_PROCID:-NA}} localid=${{SLURM_LOCALID:-NA}} cuda=${{CUDA_VISIBLE_DEVICES:-unset}}]\\"
             $cmd
         "
-    '
+    ' \\
     :::: "$FILTERED_JOB_FILE"
 
 echo "All jobs finished."
