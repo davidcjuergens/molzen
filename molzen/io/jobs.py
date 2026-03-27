@@ -174,8 +174,10 @@ def generate_parallel_srun_launcher(
     - Each line of `job_file` should be a complete shell command.
     - Blank lines and comment lines starting with `#` are ignored.
     - GPU selection is handled by setting `CUDA_VISIBLE_DEVICES` inside each
-      launched `srun` step, rather than requesting step-local GPU resources
-      from Slurm. This makes `jobs_per_gpu > 1` possible.
+      launched `srun` step. To make `jobs_per_gpu > 1` possible, the generated
+      script launches overlapping Slurm steps on each node and requests access
+      to that node's full GPU set, then constrains each command with
+      `CUDA_VISIBLE_DEVICES`.
     - This function does not itself submit a Slurm job; it only generates the
       launcher script.
     """
@@ -389,12 +391,12 @@ parallel --jobs "$JOBS_IN_FLIGHT" --joblog "$JOBLOG" {resume_flag} --line-buffer
 
     echo "[parallel slot {{%}}] launching on $(date) node=$node cuda=$device: $cmd"
 
-    srun --exact -N 1 -n 1 -w "$node" -c '"$CPUS_PER_JOB"' $SRUN_EXTRA_ARGS \\
+    srun --overlap --exact -N 1 -n 1 -w "$node" -c '"$CPUS_PER_JOB"' --gres=gpu:'"$GPUS_PER_NODE"' $SRUN_EXTRA_ARGS \\
         bash -lc "
             set -euo pipefail
             {"$BASH_SETUP" if bash_setup else ":"}
             export CUDA_VISIBLE_DEVICES=$device
-            echo \\"[srun host=$(hostname) procid=${{SLURM_PROCID:-NA}} localid=${{SLURM_LOCALID:-NA}} cuda=${{CUDA_VISIBLE_DEVICES:-unset}}]\\"
+            echo \\"[srun host=\$(hostname) procid=\${{SLURM_PROCID:-NA}} localid=\${{SLURM_LOCALID:-NA}} cuda=\${{CUDA_VISIBLE_DEVICES:-unset}}]\\"
             $cmd
         "
     ' \\
