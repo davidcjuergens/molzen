@@ -298,7 +298,7 @@ for node in "${{ALLOC_NODES[@]}}"; do
         for ((offset = 1; offset < GPUS_PER_JOB; offset++)); do
             device_group+=",${{expanded_gpu_slots[$((start + offset))]}}"
         done
-        printf '%s\\t%s\\n' "$node" "$device_group" >> "$SLOT_ASSIGNMENTS_FILE"
+        printf '%s|%s\\n' "$node" "$device_group" >> "$SLOT_ASSIGNMENTS_FILE"
     done
 done
 
@@ -380,7 +380,12 @@ parallel --jobs "$JOBS_IN_FLIGHT" --joblog "$JOBLOG" {resume_flag} --line-buffer
         echo "[parallel slot {{%}}] no slot assignment found" >&2
         exit 1
     fi
-    IFS=$'\\t' read -r node device <<< "$assignment"
+    node=${{assignment%%|*}}
+    device=${{assignment#*|}}
+    if [[ -z "$node" || -z "$device" || "$node" == "$assignment" ]]; then
+        echo "[parallel slot {{%}}] malformed slot assignment: $assignment" >&2
+        exit 1
+    fi
 
     echo "[parallel slot {{%}}] launching on $(date) node=$node cuda=$device: $cmd"
 
