@@ -150,7 +150,8 @@ def generate_parallel_srun_launcher(
     joblog : str, default="parallel_joblog.txt"
         GNU Parallel joblog filename.
     resume : bool, default=True
-        If True, use GNU Parallel `--resume`.
+        If True, use GNU Parallel `--resume-failed`, so previously successful
+        jobs are skipped while failed jobs are retried.
     srun_extra_args : list[str] or str or None, default=None
         Extra arguments appended to the srun command, e.g.
         ["--cpu-bind=cores"] or "--cpu-bind=cores".
@@ -173,8 +174,10 @@ def generate_parallel_srun_launcher(
     - Each line of `job_file` should be a complete shell command.
     - Blank lines and comment lines starting with `#` are ignored.
     - GPU selection is handled by setting `CUDA_VISIBLE_DEVICES` inside each
-      launched `srun` step, rather than requesting step-local GPU resources
-      from Slurm. This makes `jobs_per_gpu > 1` possible.
+      launched `srun` step. To make `jobs_per_gpu > 1` possible, the generated
+      script launches overlapping Slurm steps on each node and requests access
+      to that node's full GPU set, then constrains each command with
+      `CUDA_VISIBLE_DEVICES`.
     - This function does not itself submit a Slurm job; it only generates the
       launcher script.
     """
@@ -199,7 +202,7 @@ def generate_parallel_srun_launcher(
     else:
         srun_extra_args_str = " ".join(str(x) for x in srun_extra_args).strip()
 
-    resume_flag = "--resume" if resume else ""
+    resume_flag = "--resume-failed" if resume else ""
     bash_setup = (bash_setup or "").rstrip()
 
     # Preserve literal text for the shell script.
@@ -279,7 +282,8 @@ if [[ "${{#ALLOC_NODES[@]}}" -eq 0 ]]; then
 fi
 
 SLOT_ASSIGNMENTS_FILE=$(mktemp)
-trap 'rm -f "$SLOT_ASSIGNMENTS_FILE"' EXIT
+FILTERED_JOB_FILE=$(mktemp)
+trap 'rm -f "$SLOT_ASSIGNMENTS_FILE" "$FILTERED_JOB_FILE"' EXIT
 
 for node in "${{ALLOC_NODES[@]}}"; do
     expanded_gpu_slots=()
@@ -296,7 +300,7 @@ for node in "${{ALLOC_NODES[@]}}"; do
         for ((offset = 1; offset < GPUS_PER_JOB; offset++)); do
             device_group+=",${{expanded_gpu_slots[$((start + offset))]}}"
         done
-        printf '%s\\t%s\\n' "$node" "$device_group" >> "$SLOT_ASSIGNMENTS_FILE"
+        printf '%s|%s\\n' "$node" "$device_group" >> "$SLOT_ASSIGNMENTS_FILE"
     done
 done
 
@@ -352,12 +356,23 @@ echo "Slurm CPUs/node  : ${{SLURM_CPUS_ON_NODE:-<unknown>}}"
 echo "CPU slot limit   : $CPU_LIMIT_MSG"
 
 export SHELL=/bin/bash
+export SLOT_ASSIGNMENTS_FILE
+export SRUN_EXTRA_ARGS
+export BASH_SETUP
 
 # Filter out blank lines and full-line comments before feeding into GNU Parallel.
 # Each surviving line is treated as a complete shell command.
 # GNU Parallel slot IDs are used as stable worker IDs, and each worker is bound
 # to a precomputed {{node, CUDA_VISIBLE_DEVICES}} pair from SLOT_ASSIGNMENTS_FILE.
-grep -Ev '^[[:space:]]*($|#)' "$JOB_FILE" | \\
+grep -Ev '^[[:space:]]*($|#)' "$JOB_FILE" > "$FILTERED_JOB_FILE"
+NUM_COMMANDS=$(wc -l < "$FILTERED_JOB_FILE")
+echo "Commands found   : $NUM_COMMANDS"
+
+if [[ "$NUM_COMMANDS" -lt 1 ]]; then
+    echo "Error: no runnable commands found in $JOB_FILE." >&2
+    exit 1
+fi
+
 parallel --jobs "$JOBS_IN_FLIGHT" --joblog "$JOBLOG" {resume_flag} --line-buffer \\
     '
     slot_id={{%}}
@@ -367,19 +382,25 @@ parallel --jobs "$JOBS_IN_FLIGHT" --joblog "$JOBLOG" {resume_flag} --line-buffer
         echo "[parallel slot {{%}}] no slot assignment found" >&2
         exit 1
     fi
-    IFS=$'\\t' read -r node device <<< "$assignment"
+    node=${{assignment%%|*}}
+    device=${{assignment#*|}}
+    if [[ -z "$node" || -z "$device" || "$node" == "$assignment" ]]; then
+        echo "[parallel slot {{%}}] malformed slot assignment: $assignment" >&2
+        exit 1
+    fi
 
     echo "[parallel slot {{%}}] launching on $(date) node=$node cuda=$device: $cmd"
 
-    srun --exact -N 1 -n 1 -w "$node" -c '"$CPUS_PER_JOB"' $SRUN_EXTRA_ARGS \\
+    srun --overlap --exact -N 1 -n 1 -w "$node" -c '"$CPUS_PER_JOB"' --gres=gpu:'"$GPUS_PER_NODE"' $SRUN_EXTRA_ARGS \\
         bash -lc "
             set -euo pipefail
             {"$BASH_SETUP" if bash_setup else ":"}
             export CUDA_VISIBLE_DEVICES=$device
-            echo \\"[srun host=$(hostname) procid=${{SLURM_PROCID:-NA}} localid=${{SLURM_LOCALID:-NA}} cuda=${{CUDA_VISIBLE_DEVICES:-unset}}]\\"
+            echo \\"[srun host=\$(hostname) procid=\${{SLURM_PROCID:-NA}} localid=\${{SLURM_LOCALID:-NA}} cuda=\${{CUDA_VISIBLE_DEVICES:-unset}}]\\"
             $cmd
         "
-    '
+    ' \\
+    :::: "$FILTERED_JOB_FILE"
 
 echo "All jobs finished."
 """
