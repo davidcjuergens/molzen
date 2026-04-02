@@ -11,7 +11,7 @@ dependencies = [
     "pytest>=9.0.2",
     "ruff>=0.9.3",
     "py3dmol",
-    "pandas>=3.0.1",
+    "pandas",
 ]
 
 [project.optional-dependencies]
