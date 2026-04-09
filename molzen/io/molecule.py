@@ -915,13 +915,15 @@ class Molecule(Mapping[str, Any]):
 
     def __repr__(self) -> str:
         parts: list[str] = []
+        frame_count = 0
 
         if self.atom_records is not None:
+            frame_count = self._frame_count(self.atom_records)
             parts.append(f"atom_records={len(self.atom_records)}")
-            parts.append(f"frames={self._frame_count(self.atom_records)}")
+            parts.append(f"frames={frame_count}")
         if self.xyz is not None:
             parts.append(f"xyz_shape={tuple(np.asarray(self.xyz).shape)}")
-        if self.polymer_xyz is not None:
+        if frame_count == 1 and self.polymer_xyz is not None:
             parts.append(f"polymer_xyz_shape={tuple(self.polymer_xyz.shape)}")
         if self.atom_names is not None:
             parts.append(f"atom_names={len(self.atom_names)}")
@@ -931,8 +933,12 @@ class Molecule(Mapping[str, Any]):
             parts.append(f"comments={len(self.comments)}")
         if self.seq is not None:
             parts.append(f"seq_len={len(self.seq)}")
-        if self.hetatm is not None:
-            parts.append(f"hetatm={len(self.hetatm)}")
+        if self.atom_records is not None:
+            hetatm_count = int(
+                np.count_nonzero(self.atom_records["record_name"] == "HETATM")
+            )
+            if hetatm_count:
+                parts.append(f"hetatm={hetatm_count}")
         if self.metadata:
             parts.append(f"metadata_keys={sorted(self.metadata)}")
 
