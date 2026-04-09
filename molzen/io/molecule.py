@@ -816,22 +816,22 @@ class Molecule(Mapping[str, Any]):
         step: int | None = None,
     ) -> Molecule:
         """Return a new molecule with only the selected coordinate frames.
-        
+
         Args:
             start: The starting index or slice for frame selection.
             stop: If start is an int, the ending index for frame selection (exclusive).
             step: If start is an int, the step size for frame selection.
-        
+
         Raises:
-            ValueError: If atom_records is not set or if the resulting slice is invalid. 
+            ValueError: If atom_records is not set or if the resulting slice is invalid.
             TypeError: If start is a slice and stop or step is provided.
-        
+
         Returns:
             A new Molecule instance containing only the selected frames.
         """
         if self._atom_records is None:
             raise ValueError("No atom_records available to slice.")
-        
+
         # resolve to a slice object
         if isinstance(start, slice):
             if stop is not None or step is not None:

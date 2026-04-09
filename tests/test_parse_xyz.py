@@ -65,7 +65,10 @@ def test_slice_frames_returns_new_molecule_with_selected_frames(tmp_path):
     assert isinstance(sliced, Molecule)
     assert sliced.comments == ["frame-1", "frame-2"]
     assert sliced.atom_records is not None
-    assert sliced.atom_records["record_name"].tolist() == out.atom_records["record_name"].tolist()
+    assert (
+        sliced.atom_records["record_name"].tolist()
+        == out.atom_records["record_name"].tolist()
+    )
     np.testing.assert_allclose(sliced.xyz, out.xyz[1:3])
     np.testing.assert_allclose(sliced_from_slice.xyz, out.xyz[1:3])
     np.testing.assert_allclose(out[1:3].xyz, out.xyz[1:3])
