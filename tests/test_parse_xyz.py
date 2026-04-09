@@ -72,3 +72,23 @@ def test_slice_frames_returns_new_molecule_with_selected_frames(tmp_path):
     np.testing.assert_allclose(sliced.xyz, out.xyz[1:3])
     np.testing.assert_allclose(sliced_from_slice.xyz, out.xyz[1:3])
     np.testing.assert_allclose(out[1:3].xyz, out.xyz[1:3])
+
+
+def test_repr_does_not_raise_for_multiframe_xyz(tmp_path):
+    xyz_file = tmp_path / "frames.xyz"
+    xyz_file.write_text(
+        "2\n"
+        "frame-0\n"
+        "H 0.0 0.0 0.0\n"
+        "O 0.0 0.0 1.0\n"
+        "2\n"
+        "frame-1\n"
+        "H 0.0 0.1 0.0\n"
+        "O 0.0 0.1 1.0\n"
+    )
+
+    out = Molecule.from_xyz(str(xyz_file))
+
+    text = repr(out)
+    assert "frames=2" in text
+    assert "hetatm=2" in text
