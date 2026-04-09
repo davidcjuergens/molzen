@@ -809,7 +809,72 @@ class Molecule(Mapping[str, Any]):
             data["metadata"] = self.metadata
         return data
 
-    def __getitem__(self, key: str) -> Any:
+    def slice_frames(
+        self,
+        start: int | slice | None = None,
+        stop: int | None = None,
+        step: int | None = None,
+    ) -> Molecule:
+        """Return a new molecule with only the selected coordinate frames.
+
+        Args:
+            start: The starting index or slice for frame selection.
+            stop: If start is an int, the ending index for frame selection (exclusive).
+            step: If start is an int, the step size for frame selection.
+
+        Raises:
+            ValueError: If atom_records is not set or if the resulting slice is invalid.
+            TypeError: If start is a slice and stop or step is provided.
+
+        Returns:
+            A new Molecule instance containing only the selected frames.
+        """
+        if self._atom_records is None:
+            raise ValueError("No atom_records available to slice.")
+
+        # resolve to a slice object
+        if isinstance(start, slice):
+            if stop is not None or step is not None:
+                raise TypeError("stop and step must be omitted when start is a slice.")
+            frames = start
+        else:
+            frames = slice(start, stop, step)
+
+        # grab coordinates corresponding to desired slice
+        sliced_coords = self._atom_records["coords"][:, frames, :]
+        # create a new atom_records array to populate
+        n_frames = sliced_coords.shape[1]
+        atom_records = np.zeros(
+            len(self._atom_records), dtype=atom_record_dtype(n_frames)
+        )
+
+        for name in atom_records.dtype.names or ():
+            if name == "coords":
+                continue
+            atom_records[name] = self._atom_records[name]
+        atom_records["coords"] = sliced_coords
+
+        metadata = self.metadata
+        metadata.pop("pdb_raw_lines", None)
+        metadata.pop("pdb_records", None)
+
+        comments_out = None if self._comments is None else self._comments[frames]
+
+        # make new Molecule instance with sliced data
+        return Molecule(
+            atom_records=atom_records,
+            comments=comments_out,
+            metadata=metadata,
+            _legacy_view=self._legacy_view,
+        )
+
+    def __getitem__(self, key: str | slice) -> Any:
+        """Get a molecule property by key OR return a Molecule() with data at selected frames if key is a slice."""
+        # Treat slice syntax as frame selection before mapping-style access.
+        if isinstance(key, slice):
+            return self.slice_frames(key)
+
+        # Keep string-key lookups compatible with the Mapping interface.
         if key == "metadata":
             if self.metadata:
                 return self.metadata
@@ -818,6 +883,7 @@ class Molecule(Mapping[str, Any]):
         if key not in self._MAPPING_FIELDS:
             raise KeyError(key)
 
+        # Hide absent optional fields the same way a dict would.
         value = getattr(self, key)
         if value is None:
             raise KeyError(key)
