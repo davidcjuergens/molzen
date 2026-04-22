@@ -165,7 +165,4 @@ def show_molecule(
         pdb_text = _pdb_text(atom_records, frame=frame)
         view = nv.show_text(pdb_text)
 
-    view.add_ball_and_stick()
-    view.layout.width = width
-    view.layout.height = height
     return view
