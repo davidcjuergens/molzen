@@ -16,13 +16,24 @@ from molzen.io.molecule import Molecule, atom_record_dtype
 class FakeView:
     """Small fake nglview widget used for unit tests."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str = "", owner: FakeNGLView | None = None) -> None:
         self.show_text_input = text
+        self.owner = owner
         self.ball_and_stick_called = False
         self.layout = SimpleNamespace(width=None, height=None)
+        self.max_frame = 0
 
     def add_ball_and_stick(self) -> None:
         self.ball_and_stick_called = True
+
+    def add_trajectory(self, structure, **kwargs):
+        self.structure = structure
+        self.show_text_input = structure.get_structure_string()
+        self.max_frame = structure.n_frames - 1
+        if self.owner is not None:
+            self.owner.last_widget_input = structure
+            self.owner.last_trajectory_kwargs = kwargs
+        return SimpleNamespace()
 
 
 class FakeStructure:
@@ -50,19 +61,22 @@ class FakeNGLView(ModuleType):
         self.NGLWidget = self._make_widget
         self.last_view: FakeView | None = None
         self.last_widget_input = None
+        self.last_widget_constructor_input = None
         self.last_widget_kwargs = None
+        self.last_trajectory_kwargs = None
 
     def show_text(self, text: str) -> FakeView:
         self.last_view = FakeView(text)
         return self.last_view
 
-    def _make_widget(self, structure, **kwargs) -> FakeView:
-        view = FakeView(structure.get_structure_string())
-        view.structure = structure
+    def _make_widget(self, structure=None, **kwargs) -> FakeView:
+        view = FakeView(owner=self)
         view.gui_style = None
         self.last_view = view
-        self.last_widget_input = structure
+        self.last_widget_constructor_input = structure
         self.last_widget_kwargs = kwargs
+        if structure is not None:
+            view.add_trajectory(structure)
         return view
 
 
@@ -123,9 +137,12 @@ def test_show_multiframe_molecule_uses_trajectory_widget(monkeypatch) -> None:
     view = mol.show()
 
     assert fake_nv.last_widget_input is not None
+    assert fake_nv.last_widget_constructor_input is None
     assert fake_nv.last_widget_kwargs == {"gui": True}
+    assert fake_nv.last_trajectory_kwargs == {}
 
     assert fake_nv.last_widget_input.n_frames == 2
+    assert view.max_frame == 1
     np.testing.assert_allclose(
         fake_nv.last_widget_input.get_coordinates(1),
         np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]], dtype=float),
