@@ -175,6 +175,11 @@ class Molecule(Mapping[str, Any]):
         ):
             raise ValueError("comments length must match number of coordinate frames.")
         self._atom_records = records
+    
+    @staticmethod
+    def shape(self):
+        """Return the shape of the xyz coordinates as (n_frames, n_atoms, 3)."""
+        return self.xyz.shape
 
     @staticmethod
     def _frame_count(atom_records: np.ndarray) -> int:
