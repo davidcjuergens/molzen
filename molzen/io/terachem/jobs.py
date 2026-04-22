@@ -192,3 +192,5 @@ def make_terachem_job_array(
     with open(tasks_file, "w") as f:
         for line in one_liners:
             f.write(f"{line}\n")
+
+    print(f"Wrote {len(one_liners)} terachem jobs to {tasks_file}")
