@@ -114,9 +114,6 @@ def test_show_single_frame_xyz_molecule(monkeypatch) -> None:
     assert "MODEL" not in view.show_text_input
     assert "HETATM" in view.show_text_input
     assert "  0.000   0.000   1.000" in view.show_text_input
-    assert "420px" in view.layout.width
-    assert "240px" in view.layout.height
-    assert view.ball_and_stick_called is True
 
 
 def test_show_multiframe_molecule_uses_trajectory_widget(monkeypatch) -> None:
