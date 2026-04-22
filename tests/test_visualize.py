@@ -22,9 +22,18 @@ class FakeView:
         self.ball_and_stick_called = False
         self.layout = SimpleNamespace(width=None, height=None)
         self.max_frame = 0
+        self.player_refresh_count = 0
+        self._iplayer = SimpleNamespace(
+            children=[SimpleNamespace(max=0), SimpleNamespace(max=0)]
+        )
 
     def add_ball_and_stick(self) -> None:
         self.ball_and_stick_called = True
+
+    def _create_player(self) -> None:
+        self.player_refresh_count += 1
+        self._iplayer.children[0].max = self.max_frame
+        self._iplayer.children[1].max = self.max_frame
 
     def add_trajectory(self, structure, **kwargs):
         self.structure = structure
@@ -140,6 +149,9 @@ def test_show_multiframe_molecule_uses_trajectory_widget(monkeypatch) -> None:
 
     assert fake_nv.last_widget_input.n_frames == 2
     assert view.max_frame == 1
+    assert view.player_refresh_count == 1
+    assert view._iplayer.children[0].max == 1
+    assert view._iplayer.children[1].max == 1
     np.testing.assert_allclose(
         fake_nv.last_widget_input.get_coordinates(1),
         np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]], dtype=float),

@@ -161,6 +161,9 @@ def show_molecule(
     if frame is None and _frame_count(atom_records) > 1:
         view = nv.NGLWidget(gui=True)
         view.add_trajectory(_structure_trajectory(atom_records, nv))
+        # The player is created before add_trajectory updates max_frame.
+        if hasattr(view, "_create_player"):
+            view._create_player()
     else:
         pdb_text = _pdb_text(atom_records, frame=frame)
         view = nv.show_text(pdb_text)
