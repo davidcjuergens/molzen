@@ -86,6 +86,7 @@ class Molecule(Mapping[str, Any]):
         "elements",
         "Z",
         "comments",
+        "spinmult",
         "seq",
         "hetatm",
     )
@@ -96,6 +97,7 @@ class Molecule(Mapping[str, Any]):
         atom_names: list[str] | None = None,
         elements: list[str] | None = None,
         comments: list[str] | None = None,
+        spinmult: int | str | None = None,
         seq: str | None = None,
         hetatm: np.ndarray | None = None,
         metadata: dict[str, Any] | None = None,
@@ -113,9 +115,11 @@ class Molecule(Mapping[str, Any]):
         )
         self._atom_records: np.ndarray | None = None
         self._comments: list[str] | None = None
+        self._spinmult: int | None = None
         self._metadata: dict[str, Any] = {}
 
         self.comments = comments
+        self.spinmult = spinmult
         if atom_records is not None:
             self.atom_records = atom_records
         else:
@@ -173,6 +177,11 @@ class Molecule(Mapping[str, Any]):
         self._atom_records = records
 
     @staticmethod
+    def shape(self):
+        """Return the shape of the xyz coordinates as (n_frames, n_atoms, 3)."""
+        return self.xyz.shape
+
+    @staticmethod
     def _frame_count(atom_records: np.ndarray) -> int:
         """Return the number of coordinate frames encoded in the dtype."""
         return atom_records.dtype["coords"].shape[0]
@@ -215,6 +224,25 @@ class Molecule(Mapping[str, Any]):
         if len(comments) != n_frames:
             raise ValueError("comments length must match number of coordinate frames.")
         return list(comments)
+
+    @staticmethod
+    def _normalize_spinmult(spinmult: int | str | None) -> int | None:
+        """Normalize spin multiplicity to a positive integer."""
+        if spinmult is None:
+            return None
+        if isinstance(spinmult, bool):
+            raise ValueError("spinmult must be a positive integer.")
+        if not isinstance(spinmult, (int, np.integer, str)):
+            raise ValueError("spinmult must be a positive integer.")
+        try:
+            value = int(spinmult)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("spinmult must be a positive integer.") from exc
+        if value < 1:
+            raise ValueError("spinmult must be a positive integer.")
+        if isinstance(spinmult, str) and str(value) != spinmult.strip():
+            raise ValueError("spinmult must be a positive integer.")
+        return value
 
     @staticmethod
     def _infer_entity_kind(record_name: str, res_name: str, element: str = "") -> str:
@@ -795,6 +823,8 @@ class Molecule(Mapping[str, Any]):
 
         if self.metadata:
             payload["metadata"] = self.metadata
+        if self.spinmult is not None:
+            payload["spinmult"] = self.spinmult
         return payload
 
     def _present_items(self, include_atom_records: bool = True) -> dict[str, Any]:
@@ -864,6 +894,7 @@ class Molecule(Mapping[str, Any]):
         return Molecule(
             atom_records=atom_records,
             comments=comments_out,
+            spinmult=self.spinmult,
             metadata=metadata,
             _legacy_view=self._legacy_view,
         )
@@ -931,6 +962,8 @@ class Molecule(Mapping[str, Any]):
             parts.append(f"elements={len(self.elements)}")
         if self.comments is not None:
             parts.append(f"comments={len(self.comments)}")
+        if self.spinmult is not None:
+            parts.append(f"spinmult={self.spinmult}")
         if self.seq is not None:
             parts.append(f"seq_len={len(self.seq)}")
         if self.atom_records is not None:
@@ -972,6 +1005,14 @@ class Molecule(Mapping[str, Any]):
         ):
             raise ValueError("comments length must match number of coordinate frames.")
         self._comments = comments
+
+    @property
+    def spinmult(self) -> int | None:
+        return self._spinmult
+
+    @spinmult.setter
+    def spinmult(self, value: int | str | None) -> None:
+        self._spinmult = self._normalize_spinmult(value)
 
     @property
     def metadata(self) -> dict[str, Any]:

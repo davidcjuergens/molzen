@@ -12,6 +12,7 @@ _ALLOWED_KEYS = {
     "atom_names",
     "elements",
     "comments",
+    "spinmult",
     "seq",
     "hetatm",
     "metadata",
