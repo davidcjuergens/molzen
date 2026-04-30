@@ -101,7 +101,7 @@ def parse_terachem_output(
 
     running_minimization = False
     out = {"minimization_converged": False}
-    
+
     standardized_excited_records = []
     i = 0
     while i < len(lines):
@@ -140,8 +140,10 @@ def parse_terachem_output(
                 out["minimization_converged"] = True
             else:
                 # possible this occurs if we are missing kwarg aliases for "minimize", e.g., "optimize"
-                # if so, update 
-                raise RuntimeError("Minimization convergence status found but did not detect minimization!")
+                # if so, update
+                raise RuntimeError(
+                    "Minimization convergence status found but did not detect minimization!"
+                )
 
         #### Excited State Results ###
         if EXCITED_STATES_RESULTS_HEADER in line:
