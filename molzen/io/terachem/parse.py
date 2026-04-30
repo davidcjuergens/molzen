@@ -89,6 +89,8 @@ def parse_terachem_output(
     CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
     EOMCCSD_ENERGIES_HEADER = "====> EOM-CCSD Energies <===="
     EOMCCSD_TRANSITION_PROPERTIES_HEADER = "====> EOM-CCSD Transition Properties <===="
+
+    MINIMIZE_CONVERGED_HEADER = "Converged!"
     #### End constants ####
 
     if not raw_str_in:
@@ -97,7 +99,9 @@ def parse_terachem_output(
     else:
         lines = file_path.splitlines()
 
-    out = {}
+    running_minimization = False
+    out = {"minimization_converged": False}
+    
     standardized_excited_records = []
     i = 0
     while i < len(lines):
@@ -110,6 +114,11 @@ def parse_terachem_output(
             tc_kwargs, i = parse_tc_input_flags(lines, start=i)
 
             out["input_args"] = tc_kwargs
+
+            # check run type
+            if tc_kwargs["run"] in ("minimize"):
+                running_minimization = True
+
             continue
 
         ### Ground State Results ###
@@ -124,6 +133,15 @@ def parse_terachem_output(
 
             i += 1
             continue
+
+        ### Minimization convergence status (not guaranteed to be present in all outputs) ###
+        if MINIMIZE_CONVERGED_HEADER in line:
+            if running_minimization:
+                out["minimization_converged"] = True
+            else:
+                # possible this occurs if we are missing kwarg aliases for "minimize", e.g., "optimize"
+                # if so, update 
+                raise RuntimeError("Minimization convergence status found but did not detect minimization!")
 
         #### Excited State Results ###
         if EXCITED_STATES_RESULTS_HEADER in line:
