@@ -1,7 +1,108 @@
 """Terachem input/output/submission utils"""
 
+import molzen.io as mzio
+from molzen.io.terachem import parse as tcparse, jobs as tcjobs
+
 import os
 from typing import Dict, List, Union, Optional
+
+
+def get_latest_structure(scrdir: str, xyz_storage_dir: str) -> str:
+    """Given a terachem scrdir, find the latest structure in the optimization.
+    If optim.rst7 exists, simply point to that.
+    If not, parse optim.xyz, grab final geometry, write to new .xyz and point to that.
+    The name of the new .xyz file will be derived from the scrdir name
+    Else, raise error.
+
+    Args:
+        scrdir: path to terachem scrdir
+        xyz_storage_dir: directory to dump new .xyz files if needed. Must exist.
+    """
+
+    # create paths to files that may or may not exist
+    maybe_rst7 = os.path.join(scrdir, "optim.rst7")
+    maybe_xyz = os.path.join(scrdir, "optim.xyz")
+    scrdir_tag = os.path.basename(scrdir).replace("tc_scr.", "")
+    os.makedirs(xyz_storage_dir, exist_ok=True)
+
+    # if optim.rst7 exists, symlink that and point to it in new job
+    if os.path.exists(maybe_rst7):
+        new_rst7_path = os.path.join(xyz_storage_dir, f"{scrdir_tag}.rst7")
+        os.symlink(maybe_rst7, new_rst7_path)
+        return new_rst7_path
+
+    # if optim.xyz exists, parse it, grab final frame, write to new .xyz and point to that in new job
+    elif os.path.exists(maybe_xyz):
+        mol = mzio.Molecule.from_xyz(maybe_xyz)
+        final_frame = mol[-1]
+        new_xyz_path = os.path.join(xyz_storage_dir, f"{scrdir_tag}.xyz")
+        assert not os.path.exists(new_xyz_path), (
+            f".xyz file {new_xyz_path} already exists."
+        )
+        final_frame.to_xyz(new_xyz_path)
+        return new_xyz_path
+
+    else:
+        raise FileNotFoundError(f"No optim.rst7 or optim.xyz found in {scrdir}")
+
+
+def restart_terachem_optimization_from_latest(
+    tc_stdouts: list,
+    new_workdir: str,
+    terachem_exe: str,
+    clobber: bool = False,
+    kwarg_updates: dict = None,
+):
+    """Create jobs that restart optimization from latest geometry in scrdir
+
+    Args:
+        tc_stdouts: list of paths terachem output files
+        new_workdir: new directory to dump jobs
+        terachem_exe: terachem executable
+        clobber: whether to overwrite existing files
+        kwarg_updates: dict of any additional keyword arguments to place into new jobs
+                       (e.g. if you want to change method, basis, etc. for the restart)
+    """
+    parsed = [tcparse.parse_terachem_output(s) for s in tc_stdouts]
+
+    #### Process job args ####
+    # get args from stdout
+    job_args = [p["input_args"] for p in parsed]
+
+    # update job args with any additional keyword arguments
+    if kwarg_updates is not None:
+        for args in job_args:
+            args.update(kwarg_updates)
+
+    # extract key items that must be removed or passed back in
+    job_constraint_lists = [
+        job_args[i].pop("constraints") for i in range(len(job_args))
+    ]
+    old_scrdirs = [k.pop("scrdir") for k in job_args]
+    # pop old coordinates
+    _ = [k.pop("coordinates") for k in job_args]
+
+    # get final structures -- assume either optim.rst7 or optim.xyz
+    # if optim.rst7 exists, use that.
+    # if optim.xyz, parse it and grab final geometry from that.
+    latest_geometries = []
+    for d in old_scrdirs:
+        xyz_storage_dir = os.path.join(new_workdir, "latest_xyzs")
+        latest = get_latest_structure(d, xyz_storage_dir)
+        latest_geometries.append(latest)
+
+    #####
+    # now make new jobs with the same args but new coordinates and new workdir
+    #####
+    tcjobs.make_terachem_job_array(
+        latest_geometries,
+        workdir=new_workdir,
+        tc_kwargs=job_args,
+        terachem_exe=terachem_exe,
+        clobber=clobber,
+        tags=None,
+        constraint_lists=job_constraint_lists,
+    )
 
 
 def make_terachem_input(
