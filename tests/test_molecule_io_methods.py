@@ -90,3 +90,46 @@ def test_hdf5_roundtrip(tmp_path):
     assert parsed.metadata["kind"] == "hdf5"
     assert parsed.atom_records is not None
     assert parsed.atom_records["element"].tolist() == ["He"]
+
+
+def test_dmap_returns_pairwise_distances_for_each_frame():
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [3.0, 0.0, 0.0],
+                    [0.0, 4.0, 0.0],
+                ],
+                [
+                    [1.0, 1.0, 1.0],
+                    [1.0, 1.0, 6.0],
+                    [1.0, 5.0, 1.0],
+                ],
+            ],
+            dtype=float,
+        ),
+        elements=["C", "H", "O"],
+        comments=["frame-0", "frame-1"],
+    )
+
+    expected = np.array(
+        [
+            [
+                [0.0, 3.0, 4.0],
+                [3.0, 0.0, 5.0],
+                [4.0, 5.0, 0.0],
+            ],
+            [
+                [0.0, 5.0, 4.0],
+                [5.0, 0.0, np.sqrt(41.0)],
+                [4.0, np.sqrt(41.0), 0.0],
+            ],
+        ],
+        dtype=float,
+    )
+
+    assert mol.dmap.shape == (2, 3, 3)
+    np.testing.assert_allclose(mol.dmap, expected)
+    np.testing.assert_allclose(mol.dmap, np.swapaxes(mol.dmap, 1, 2))
+    np.testing.assert_allclose(np.diagonal(mol.dmap, axis1=1, axis2=2), 0.0)
