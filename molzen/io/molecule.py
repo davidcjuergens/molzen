@@ -176,10 +176,27 @@ class Molecule(Mapping[str, Any]):
             raise ValueError("comments length must match number of coordinate frames.")
         self._atom_records = records
 
-    @staticmethod
+    @property
     def shape(self):
         """Return the shape of the xyz coordinates as (n_frames, n_atoms, 3)."""
         return self.xyz.shape
+
+    @property
+    def dmap(self) -> np.ndarray:
+        """Return the distance map of the molecule."""
+        if self._atom_records is None:
+            raise ValueError("Atom records are not set.")
+
+        xyz = self.xyz
+        assert xyz.ndim == 3, "self.xyz does not have shape (n_frames, n_atoms, 3)"
+        T, natom, _ = xyz.shape
+
+        # subtract all i from all j
+        diff = xyz[:, :, None, :] - xyz[:, None, :, :]
+        dmap = np.linalg.norm(diff, axis=-1)
+        assert dmap.shape == (T, natom, natom)
+
+        return dmap
 
     @staticmethod
     def _frame_count(atom_records: np.ndarray) -> int:
