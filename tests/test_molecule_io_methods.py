@@ -155,3 +155,33 @@ def test_shape_returns_xyz_shape():
     )
 
     assert mol.shape == mol.xyz.shape == (2, 2, 3)
+
+
+def test_dmap_handles_single_frame_xyz_without_public_frame_axis():
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [0.0, 4.0, 0.0],
+            ],
+            dtype=float,
+        ),
+        elements=["C", "H", "O"],
+    )
+
+    assert mol.xyz.shape == (3, 3)
+    assert mol._atom_records["coords"].shape == (3, 1, 3)
+    np.testing.assert_allclose(
+        mol.dmap,
+        np.array(
+            [
+                [
+                    [0.0, 3.0, 4.0],
+                    [3.0, 0.0, 5.0],
+                    [4.0, 5.0, 0.0],
+                ]
+            ],
+            dtype=float,
+        ),
+    )
