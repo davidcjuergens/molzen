@@ -133,3 +133,25 @@ def test_dmap_returns_pairwise_distances_for_each_frame():
     np.testing.assert_allclose(mol.dmap, expected)
     np.testing.assert_allclose(mol.dmap, np.swapaxes(mol.dmap, 1, 2))
     np.testing.assert_allclose(np.diagonal(mol.dmap, axis1=1, axis2=2), 0.0)
+
+
+def test_shape_returns_xyz_shape():
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                [
+                    [1.0, 0.0, 0.0],
+                    [1.0, 0.0, 1.0],
+                ],
+            ],
+            dtype=float,
+        ),
+        elements=["H", "O"],
+        comments=["frame-0", "frame-1"],
+    )
+
+    assert mol.shape == mol.xyz.shape == (2, 2, 3)
