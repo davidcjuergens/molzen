@@ -187,8 +187,8 @@ class Molecule(Mapping[str, Any]):
         if self._atom_records is None:
             raise ValueError("Atom records are not set.")
 
-        xyz = self.xyz
-        assert xyz.ndim == 3, "self.xyz does not have shape (n_frames, n_atoms, 3)"
+        # Canonical coords in self._atom_records are atom-major (n_atoms, n_frames, 3)
+        xyz = np.swapaxes(self._atom_records["coords"], 0, 1)
         T, natom, _ = xyz.shape
 
         # subtract all i from all j
