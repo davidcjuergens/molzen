@@ -185,3 +185,28 @@ def test_dmap_handles_single_frame_xyz_without_public_frame_axis():
             dtype=float,
         ),
     )
+
+
+def test_pop_removes_and_returns_atom_record():
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            dtype=float,
+        ),
+        elements=["C", "H", "O"],
+    )
+    mol.metadata = {"pdb_raw_lines": ["ATOM"], "source": "unit-test"}
+
+    removed = mol.pop(1)
+
+    assert removed["element"] == "H"
+    np.testing.assert_allclose(removed["coords"], [[1.0, 0.0, 0.0]])
+    assert mol.atom_records is not None
+    assert mol.atom_records["element"].tolist() == ["C", "O"]
+    assert mol.atom_records["coords"].shape == (2, 1, 3)
+    assert "pdb_raw_lines" not in mol.metadata
+    assert mol.metadata["source"] == "unit-test"
