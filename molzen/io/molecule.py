@@ -181,6 +181,16 @@ class Molecule(Mapping[str, Any]):
         """Return the shape of the xyz coordinates as (n_frames, n_atoms, 3)."""
         return self.xyz.shape
 
+    def pop(self, idx: int) -> np.void:
+        """Remove and return one atom record by index."""
+        if self._atom_records is None:
+            raise ValueError("No atom_records available to pop.")
+
+        removed = self._atom_records[idx].copy()
+        self._atom_records = np.delete(self._atom_records, idx, axis=0)
+        self._clear_stale_pdb_metadata()
+        return removed
+
     @property
     def dmap(self) -> np.ndarray:
         """Return the distance map of the molecule."""
