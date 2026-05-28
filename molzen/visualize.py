@@ -10,19 +10,6 @@ if TYPE_CHECKING:
     from molzen.io.molecule import Molecule
 
 
-def _require_nglview() -> Any:
-    """Import nglview lazily for optional visualization support."""
-    try:
-        import nglview as nv
-    except ImportError as exc:
-        raise ImportError(
-            "nglview is required for Molecule.show(). "
-            "Install molzen[viz] for visualization dependencies."
-            f"Original import error: {exc}"
-        ) from exc
-    return nv
-
-
 def _frame_count(atom_records: np.ndarray) -> int:
     """Return the number of coordinate frames in atom_records."""
     return atom_records.dtype["coords"].shape[0]
@@ -40,132 +27,155 @@ def _coerce_frame_index(atom_records: np.ndarray, frame: int | None) -> int | No
 
 
 def _viewer_atom_name(row: np.void, fallback_index: int) -> str:
-    """Return a PDB-safe atom name for the viewer export."""
+    """Return a fallback atom name for the viewer export."""
     atom_name = str(row["atom_name"]).strip()
     if atom_name:
         return atom_name[:4]
 
-    element = str(row["element"]).strip()
+    element = str(row["element"]).strip().capitalize()
     if element:
         return element[:4]
     return f"A{fallback_index}"[:4]
 
 
-def _viewer_record_name(row: np.void) -> str:
-    """Return the viewer record name, defaulting from entity kind."""
-    record_name = str(row["record_name"]).strip().upper()
-    if record_name:
-        return record_name
-
-    entity_kind = str(row["entity_kind"]).strip().lower()
-    if entity_kind == "polymer":
-        return "ATOM"
-    return "HETATM"
-
-
-def _pdb_lines_for_frame(atom_records: np.ndarray, frame_index: int) -> list[str]:
-    """Serialize one coordinate frame to PDB atom lines."""
+def _xyz_lines_for_frame(atom_records: np.ndarray, frame_index: int) -> list[str]:
+    """Serialize one coordinate frame to XYZ atom lines."""
     lines: list[str] = []
     for i, row in enumerate(atom_records, start=1):
-        record_name = _viewer_record_name(row)
-        serial = (
-            int(row["serial"]) if int(row["serial"]) > 0 else int(row["atom_index"]) + 1
-        )
-        atom_name = _viewer_atom_name(row, i)
-        alt_loc = str(row["alt_loc"]).strip()[:1]
-        res_name = (str(row["res_name"]).strip() or "MOL")[:3]
-        chain_id = (str(row["chain_id"]).strip() or " ")[:1]
-        res_num = int(row["res_num"]) if int(row["res_num"]) != 0 else 1
-        i_code = str(row["i_code"]).strip()[:1]
+        element = str(row["element"]).strip().capitalize()
+        if not element:
+            element = _viewer_atom_name(row, i).strip().capitalize() or "X"
         coord = np.asarray(row["coords"][frame_index], dtype=float)
-        occupancy = float(row["occupancy"])
-        if not np.isfinite(occupancy):
-            occupancy = 1.00
-        temp_factor = float(row["temp_factor"])
-        if not np.isfinite(temp_factor):
-            temp_factor = 0.00
-        element = str(row["element"]).strip()[:2]
-        charge = str(row["charge"]).strip()[:2]
-
         lines.append(
-            f"{record_name:<6}{serial:5d} {atom_name:>4}{alt_loc:1}{res_name:>3} "
-            f"{chain_id:1}{res_num:4d}{i_code:1}   "
-            f"{coord[0]:8.3f}{coord[1]:8.3f}{coord[2]:8.3f}"
-            f"{occupancy:6.2f}{temp_factor:6.2f}          "
-            f"{element:>2}{charge:>2}\n"
+            f"{element} {coord[0]:.8f} {coord[1]:.8f} {coord[2]:.8f}\n"
         )
     return lines
 
 
-def _pdb_text(atom_records: np.ndarray, frame: int | None = None) -> str:
-    """Serialize atom_records to PDB text for nglview."""
+def _xyz_text(atom_records: np.ndarray, frame: int | None = None) -> str:
+    """Serialize atom_records to XYZ text for py3Dmol."""
     if len(atom_records) == 0:
         raise ValueError("Cannot visualize an empty molecule.")
 
     frame = _coerce_frame_index(atom_records, frame)
     n_frames = _frame_count(atom_records)
+    frame_indices = range(n_frames) if frame is None else (frame,)
     chunks: list[str] = []
 
-    if frame is None and n_frames > 1:
-        for frame_index in range(n_frames):
-            chunks.append(f"MODEL     {frame_index + 1}\n")
-            chunks.extend(_pdb_lines_for_frame(atom_records, frame_index))
-            chunks.append("ENDMDL\n")
-    else:
-        frame_index = 0 if frame is None else frame
-        chunks.extend(_pdb_lines_for_frame(atom_records, frame_index))
+    for frame_index in frame_indices:
+        chunks.append(f"{len(atom_records)}\n")
+        chunks.append(f"Frame {frame_index + 1}\n")
+        chunks.extend(_xyz_lines_for_frame(atom_records, frame_index))
 
-    chunks.append("END\n")
     return "".join(chunks)
 
 
-def _structure_trajectory(atom_records: np.ndarray, nv: Any) -> Any:
-    """Build an nglview Structure/Trajectory adaptor from atom_records."""
-
-    class AtomRecordStructureTrajectory(nv.Structure, nv.Trajectory):
-        """Minimal nglview adaptor backed by canonical atom_records."""
-
-        def __init__(self, records: np.ndarray) -> None:
-            nv.Structure.__init__(self)
-            nv.Trajectory.__init__(self)
-            self.ext = "pdb"
-            self.params = {}
-            self._records = records
-
-        def get_structure_string(self) -> str:
-            return _pdb_text(self._records, frame=0)
-
-        def get_coordinates(self, index: int) -> np.ndarray:
-            return np.asarray(self._records["coords"][:, index, :], dtype=float)
-
-        @property
-        def n_frames(self) -> int:
-            return _frame_count(self._records)
-
-    return AtomRecordStructureTrajectory(atom_records)
+def _require_py3dmol() -> Any:
+    """Import py3Dmol lazily for optional visualization support."""
+    try:
+        import py3Dmol
+    except ImportError as exc:
+        raise ImportError(
+            "py3Dmol is required for show_molecule_py3dmol(). "
+            "Install py3Dmol to use molecule visualization. "
+            f"Original import error: {exc}"
+        ) from exc
+    return py3Dmol
 
 
-def show_molecule(
+def _center_py3dmol_view(view: Any) -> None:
+    """Center the py3Dmol viewer div in notebook output."""
+    view.startjs = view.startjs.replace(
+        'style="position: relative; width:',
+        'style="position: relative; margin-left: auto; margin-right: auto; width:',
+        1,
+    )
+
+
+def _add_py3dmol_frame_slider(view: Any, n_frames: int, width: str | int) -> None:
+    """Attach a simple 3Dmol.js frame slider to a py3Dmol view."""
+    width_css = f"{width}px" if isinstance(width, int) else width
+    slider_html = f"""
+<div id="3dmol_frame_controls_UNIQUEID" style="display: flex; align-items: center; gap: 8px; width: {width_css}; margin: 4px auto 0 auto; font: 12px sans-serif;">
+  <input id="3dmol_frame_slider_UNIQUEID" type="range" min="0" max="{n_frames - 1}" value="0" step="1" style="flex: 1;">
+  <span>Frame <span id="3dmol_frame_label_UNIQUEID">1</span>/{n_frames}</span>
+</div>
+"""
+    script = """
+var frameSlider_UNIQUEID = document.getElementById("3dmol_frame_slider_UNIQUEID");
+var frameLabel_UNIQUEID = document.getElementById("3dmol_frame_label_UNIQUEID");
+if(frameSlider_UNIQUEID && frameLabel_UNIQUEID) {
+    frameSlider_UNIQUEID.addEventListener("input", function() {
+        var frame = parseInt(this.value);
+        frameLabel_UNIQUEID.textContent = String(frame + 1);
+        var framePromise = viewer_UNIQUEID.setFrame(frame);
+        if(framePromise && typeof framePromise.then === "function") {
+            framePromise.then(function() { viewer_UNIQUEID.render(); });
+        } else {
+            viewer_UNIQUEID.render();
+        }
+    });
+}
+"""
+    view.startjs = view.startjs.replace("</div>\n<script>\n", f"</div>\n{slider_html}<script>\n", 1)
+    view.startjs += script
+
+
+def _apply_py3dmol_style(view: Any, style: dict[str, Any] | None) -> None:
+    """Apply either a caller-provided style or Molzen's default molecule style."""
+    if style is not None:
+        view.setStyle(style)
+        return
+
+    view.setStyle({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}})
+    view.setStyle({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.16}})
+
+
+def show_molecule_py3dmol(
     mol: Molecule,
     *,
-    width: str = "300px",
-    height: str = "300px",
+    width: str | int = "300px",
+    height: str | int = "300px",
     frame: int | None = None,
+    style: dict[str, Any] | None = None,
+    animate: bool = False,
+    show_slider: bool = True,
 ) -> Any:
-    """Return an nglview widget for a molecule."""
+    """Return a py3Dmol view for a molecule.
+
+    Args:
+        mol: The molecule to visualize.
+        width: The width of the visualization (e.g., "300px").
+        height: The height of the visualization (e.g., "300px").
+        frame: Optional frame index to show. When omitted, multi-frame molecules
+            are loaded as an interactive trajectory.
+        style: Optional 3Dmol.js style dictionary. Defaults to stick style.
+        animate: Whether to start playback for multi-frame molecules.
+        show_slider: Whether to add a frame slider for multi-frame molecules.
+    """
+    py3dmol = _require_py3dmol()
     atom_records = mol.atom_records
     if atom_records is None or len(atom_records) == 0:
         raise ValueError("Cannot visualize an empty molecule.")
 
-    nv = _require_nglview()
-    if frame is None and _frame_count(atom_records) > 1:
-        view = nv.NGLWidget(gui=True)
-        view.add_trajectory(_structure_trajectory(atom_records, nv))
-        # The player is created before add_trajectory updates max_frame.
-        if hasattr(view, "_create_player"):
-            view._create_player()
-    else:
-        pdb_text = _pdb_text(atom_records, frame=frame)
-        view = nv.show_text(pdb_text)
+    view = py3dmol.view(width=width, height=height)
+    _center_py3dmol_view(view)
 
+    if frame is None and _frame_count(atom_records) > 1:
+        n_frames = _frame_count(atom_records)
+        view.addModelsAsFrames(_xyz_text(atom_records), "xyz")
+        _apply_py3dmol_style(view, style)
+        if show_slider:
+            _add_py3dmol_frame_slider(view, n_frames, width)
+        if animate:
+            view.animate({"loop": "forward"})
+    else:
+        view.addModel(_xyz_text(atom_records, frame=frame), "xyz")
+        _apply_py3dmol_style(view, style)
+
+    view.zoomTo()
     return view
+
+
+show_molecule_py3Dmol = show_molecule_py3dmol
+show_molecule = show_molecule_py3dmol

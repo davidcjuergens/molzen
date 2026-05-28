@@ -14,11 +14,6 @@ dependencies = [
     "pandas",
 ]
 
-[project.optional-dependencies]
-viz = [
-    "nglview>=4,<5"
-]
-
 [build-system]
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"

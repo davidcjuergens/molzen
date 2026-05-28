@@ -9,7 +9,7 @@ def generate_parallel_launcher(
     cuda_indices,
     jobs_per_gpu,
     job_file,
-    output_script="run_terachem.sh",
+    output_basename="run_terachem.sh",
     gpus_per_job=1,
 ):
     """
@@ -20,7 +20,7 @@ def generate_parallel_launcher(
         cuda_indices (list): List of integers, e.g., [0, 1, 2, 3] or [0, 2]
         jobs_per_gpu (int): How many jobs to run at once per GPU.
         job_file (str): Path to the text file containing the jobs.
-        output_script (str): Name of the shell script to create.
+        output_basename (str): Basename of the shell script to create.
         gpus_per_job (int): Number of GPUs to assign per job.
     """
 
@@ -95,6 +95,8 @@ echo "All jobs finished."
 """
 
     # 4. Write the file
+    writedir = os.path.dirname(job_file)
+    output_script = os.path.join(writedir, output_basename)
     with open(output_script, "w") as f:
         f.write(script_content)
 
