@@ -104,7 +104,7 @@ def test_show_single_frame_xyz_molecule(monkeypatch) -> None:
     assert "O 0.00000000 0.00000000 1.00000000" in view.model_text
     assert view.style_calls == [
         ({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}}),
-        ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.16}}),
+        ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}}),
     ]
     assert "margin-left: auto; margin-right: auto" in view.startjs
     assert view.zoomed
@@ -136,7 +136,7 @@ def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
     assert view.animation_options is None
     assert view.style_calls == [
         ({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}}),
-        ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.16}}),
+        ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}}),
     ]
     assert "width: 300px" in view.startjs
     assert "margin: 4px auto 0 auto" in view.startjs
@@ -232,7 +232,7 @@ def test_show_normalizes_lowercase_hydrogen_element(monkeypatch) -> None:
     assert "H 0.00000000 0.00000000 0.00000000" in view.model_text
     assert view.style_calls[-1] == (
         {"elem": "H"},
-        {"stick": {"radius": 0.06}, "sphere": {"scale": 0.16}},
+        {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}},
     )
 
 
