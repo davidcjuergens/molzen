@@ -128,7 +128,7 @@ def _apply_py3dmol_style(view: Any, style: dict[str, Any] | None) -> None:
         return
 
     view.setStyle({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}})
-    view.setStyle({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.16}})
+    view.setStyle({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}})
 
 
 def show_molecule_py3dmol(
