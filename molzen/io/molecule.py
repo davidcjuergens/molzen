@@ -1158,17 +1158,17 @@ class Molecule(Mapping[str, Any]):
     def show(
         self,
         *,
-        width: int = 300,
-        height: int = 300,
+        width: int | str = 300,
+        height: int | str = 300,
         frame: int | None = None,
     ) -> Any:
-        """Return an nglview widget for the molecule."""
+        """Return a py3Dmol view for the molecule."""
 
         # optional dependency, so lazy import
         from molzen.visualize import show_molecule
 
-        width_str = f"{width}px"
-        height_str = f"{height}px"
+        width_str = f"{width}px" if isinstance(width, int) else width
+        height_str = f"{height}px" if isinstance(height, int) else height
         return show_molecule(self, width=width_str, height=height_str, frame=frame)
 
     @classmethod

@@ -1,11 +1,11 @@
-"""Tests for Molecule nglview integration."""
+"""Tests for Molecule visualization integration."""
 
 from __future__ import annotations
 
 import sys
 from builtins import __import__ as builtin_import
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -13,104 +13,79 @@ import pytest
 from molzen.io.molecule import Molecule, atom_record_dtype
 
 
-class FakeView:
-    """Small fake nglview widget used for unit tests."""
+class FakePy3DmolView:
+    """Small fake py3Dmol view used for unit tests."""
 
-    def __init__(self, text: str = "", owner: FakeNGLView | None = None) -> None:
-        self.show_text_input = text
-        self.owner = owner
-        self.ball_and_stick_called = False
-        self.layout = SimpleNamespace(width=None, height=None)
-        self.max_frame = 0
-        self.player_refresh_count = 0
-        self._iplayer = SimpleNamespace(
-            children=[SimpleNamespace(max=0), SimpleNamespace(max=0)]
+    def __init__(self, *, width: str | int, height: str | int) -> None:
+        self.width = width
+        self.height = height
+        self.startjs = (
+            '<div id="3dmolviewer_UNIQUEID"  '
+            'style="position: relative; width: 420px; height: 240px;">\n'
+            "</div>\n<script>\n"
         )
+        self.model_text: str | None = None
+        self.model_format: str | None = None
+        self.frames_text: str | None = None
+        self.frames_format: str | None = None
+        self.style = None
+        self.style_calls = []
+        self.animation_options = None
+        self.zoomed = False
 
-    def add_ball_and_stick(self) -> None:
-        self.ball_and_stick_called = True
+    def addModel(self, text: str, fmt: str) -> None:
+        self.model_text = text
+        self.model_format = fmt
 
-    def _create_player(self) -> None:
-        self.player_refresh_count += 1
-        self._iplayer.children[0].max = self.max_frame
-        self._iplayer.children[1].max = self.max_frame
+    def addModelsAsFrames(self, text: str, fmt: str) -> None:
+        self.frames_text = text
+        self.frames_format = fmt
 
-    def add_trajectory(self, structure, **kwargs):
-        self.structure = structure
-        self.show_text_input = structure.get_structure_string()
-        self.max_frame = structure.n_frames - 1
-        if self.owner is not None:
-            self.owner.last_widget_input = structure
-            self.owner.last_trajectory_kwargs = kwargs
-        return SimpleNamespace()
+    def setStyle(self, *args) -> None:
+        self.style_calls.append(args)
+        self.style = args[-1]
 
+    def animate(self, options) -> None:
+        self.animation_options = options
 
-class FakeStructure:
-    """Small fake nglview.Structure base class."""
-
-    def __init__(self) -> None:
-        self.ext = "pdb"
-        self.params = {}
-
-
-class FakeTrajectory:
-    """Small fake nglview.Trajectory base class."""
-
-    def __init__(self) -> None:
-        self.shown = True
+    def zoomTo(self) -> None:
+        self.zoomed = True
 
 
-class FakeNGLView(ModuleType):
-    """Small fake nglview module used for unit tests."""
+class FakePy3Dmol(ModuleType):
+    """Small fake py3Dmol module used for unit tests."""
 
     def __init__(self) -> None:
-        super().__init__("nglview")
-        self.Structure = FakeStructure
-        self.Trajectory = FakeTrajectory
-        self.NGLWidget = self._make_widget
-        self.last_view: FakeView | None = None
-        self.last_widget_input = None
-        self.last_widget_constructor_input = None
-        self.last_widget_kwargs = None
-        self.last_trajectory_kwargs = None
+        super().__init__("py3Dmol")
+        self.last_view: FakePy3DmolView | None = None
 
-    def show_text(self, text: str) -> FakeView:
-        self.last_view = FakeView(text)
+    def view(self, *, width: str | int, height: str | int) -> FakePy3DmolView:
+        self.last_view = FakePy3DmolView(width=width, height=height)
         return self.last_view
 
-    def _make_widget(self, structure=None, **kwargs) -> FakeView:
-        view = FakeView(owner=self)
-        view.gui_style = None
-        self.last_view = view
-        self.last_widget_constructor_input = structure
-        self.last_widget_kwargs = kwargs
-        if structure is not None:
-            view.add_trajectory(structure)
-        return view
 
-
-def test_show_raises_without_nglview(monkeypatch) -> None:
+def test_show_raises_without_py3dmol(monkeypatch) -> None:
     mol = Molecule(
         xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
         elements=["H"],
     )
 
-    monkeypatch.delitem(sys.modules, "nglview", raising=False)
+    monkeypatch.delitem(sys.modules, "py3Dmol", raising=False)
 
     def fake_import(name, *args, **kwargs):
-        if name == "nglview":
+        if name == "py3Dmol":
             raise ImportError("missing test dependency")
         return builtin_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fake_import)
 
-    with pytest.raises(ImportError, match="nglview is required for Molecule.show"):
+    with pytest.raises(ImportError, match="py3Dmol is required"):
         mol.show()
 
 
 def test_show_single_frame_xyz_molecule(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     mol = Molecule(
         xyz=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=float),
@@ -119,15 +94,25 @@ def test_show_single_frame_xyz_molecule(monkeypatch) -> None:
 
     view = mol.show(width="420px", height="240px")
 
-    assert view is fake_nv.last_view
-    assert "MODEL" not in view.show_text_input
-    assert "HETATM" in view.show_text_input
-    assert "  0.000   0.000   1.000" in view.show_text_input
+    assert view is fake_py3dmol.last_view
+    assert view.width == "420px"
+    assert view.height == "240px"
+    assert view.model_format == "xyz"
+    assert view.frames_text is None
+    assert view.model_text.startswith("2\nFrame 1\n")
+    assert "C 0.00000000 0.00000000 0.00000000" in view.model_text
+    assert "O 0.00000000 0.00000000 1.00000000" in view.model_text
+    assert view.style_calls == [
+        ({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}}),
+        ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}}),
+    ]
+    assert "margin-left: auto; margin-right: auto" in view.startjs
+    assert view.zoomed
 
 
-def test_show_multiframe_molecule_uses_trajectory_widget(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     mol = Molecule(
         xyz=np.array(
@@ -142,26 +127,27 @@ def test_show_multiframe_molecule_uses_trajectory_widget(monkeypatch) -> None:
 
     view = mol.show()
 
-    assert fake_nv.last_widget_input is not None
-    assert fake_nv.last_widget_constructor_input is None
-    assert fake_nv.last_widget_kwargs == {"gui": True}
-    assert fake_nv.last_trajectory_kwargs == {}
-
-    assert fake_nv.last_widget_input.n_frames == 2
-    assert view.max_frame == 1
-    assert view.player_refresh_count == 1
-    assert view._iplayer.children[0].max == 1
-    assert view._iplayer.children[1].max == 1
-    np.testing.assert_allclose(
-        fake_nv.last_widget_input.get_coordinates(1),
-        np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]], dtype=float),
-    )
-    assert "MODEL" not in view.show_text_input
+    assert view is fake_py3dmol.last_view
+    assert view.model_text is None
+    assert view.frames_format == "xyz"
+    assert view.frames_text.count("2\nFrame") == 2
+    assert "C 1.00000000 0.00000000 0.00000000" in view.frames_text
+    assert "O 1.00000000 0.00000000 1.00000000" in view.frames_text
+    assert view.animation_options is None
+    assert view.style_calls == [
+        ({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}}),
+        ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}}),
+    ]
+    assert "width: 300px" in view.startjs
+    assert "margin: 4px auto 0 auto" in view.startjs
+    assert 'max="1"' in view.startjs
+    assert "setFrame(frame)" in view.startjs
+    assert view.zoomed
 
 
 def test_show_explicit_frame(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     mol = Molecule(
         xyz=np.array(
@@ -176,14 +162,16 @@ def test_show_explicit_frame(monkeypatch) -> None:
 
     view = mol.show(frame=0)
 
-    assert "MODEL" not in view.show_text_input
-    assert "  0.000   0.000   1.000" in view.show_text_input
-    assert "  5.000   0.000   1.000" not in view.show_text_input
+    assert view.model_format == "xyz"
+    assert view.frames_text is None
+    assert view.animation_options is None
+    assert "O 0.00000000 0.00000000 1.00000000" in view.model_text
+    assert "O 5.00000000 0.00000000 1.00000000" not in view.model_text
 
 
 def test_show_out_of_range_frame_raises(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     mol = Molecule(
         xyz=np.array(
@@ -201,20 +189,22 @@ def test_show_out_of_range_frame_raises(monkeypatch) -> None:
 
 
 def test_show_polymer_pdb_contains_atom_records(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     pdb_file = Path(__file__).parent / "data" / "1PRW.pdb"
     mol = Molecule.from_pdb(str(pdb_file))
 
     view = mol.show(frame=0)
 
-    assert "ATOM  " in view.show_text_input
+    assert view.model_format == "xyz"
+    assert view.model_text.startswith(f"{len(mol.atom_records)}\nFrame 1\n")
+    assert "C 56.83300018 25.00600052 2.16499996" in view.model_text
 
 
 def test_show_hetatm_only_molecule_contains_hetatm(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     mol = Molecule(
         xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
@@ -223,13 +213,32 @@ def test_show_hetatm_only_molecule_contains_hetatm(monkeypatch) -> None:
 
     view = mol.show()
 
-    assert "HETATM" in view.show_text_input
-    assert "ATOM  " not in view.show_text_input
+    assert view.model_format == "xyz"
+    assert view.model_text.startswith("1\nFrame 1\n")
+    assert "Cl 0.00000000 0.00000000 0.00000000" in view.model_text
+
+
+def test_show_normalizes_lowercase_hydrogen_element(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        elements=["h"],
+    )
+
+    view = mol.show()
+
+    assert "H 0.00000000 0.00000000 0.00000000" in view.model_text
+    assert view.style_calls[-1] == (
+        {"elem": "H"},
+        {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}},
+    )
 
 
 def test_show_uses_canonical_coordinates_after_mutation(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     pdb_file = Path(__file__).parent / "data" / "1PRW.pdb"
     mol = Molecule.from_pdb(str(pdb_file))
@@ -240,12 +249,12 @@ def test_show_uses_canonical_coordinates_after_mutation(monkeypatch) -> None:
 
     view = mol.show(frame=0)
 
-    assert " 123.456  78.900 -10.111" in view.show_text_input
+    assert "C 123.45600128 78.90000153 -10.11100006" in view.model_text
 
 
 def test_show_empty_molecule_raises_value_error(monkeypatch) -> None:
-    fake_nv = FakeNGLView()
-    monkeypatch.setitem(sys.modules, "nglview", fake_nv)
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
 
     mol = Molecule(atom_records=np.zeros(0, dtype=atom_record_dtype(1)))
 
