@@ -46,9 +46,7 @@ def _xyz_lines_for_frame(atom_records: np.ndarray, frame_index: int) -> list[str
         if not element:
             element = _viewer_atom_name(row, i).strip().capitalize() or "X"
         coord = np.asarray(row["coords"][frame_index], dtype=float)
-        lines.append(
-            f"{element} {coord[0]:.8f} {coord[1]:.8f} {coord[2]:.8f}\n"
-        )
+        lines.append(f"{element} {coord[0]:.8f} {coord[1]:.8f} {coord[2]:.8f}\n")
     return lines
 
 
@@ -117,7 +115,9 @@ if(frameSlider_UNIQUEID && frameLabel_UNIQUEID) {
     });
 }
 """
-    view.startjs = view.startjs.replace("</div>\n<script>\n", f"</div>\n{slider_html}<script>\n", 1)
+    view.startjs = view.startjs.replace(
+        "</div>\n<script>\n", f"</div>\n{slider_html}<script>\n", 1
+    )
     view.startjs += script
 
 
