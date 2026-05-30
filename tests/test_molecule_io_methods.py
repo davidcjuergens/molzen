@@ -55,6 +55,16 @@ def test_npy_roundtrip(tmp_path):
         elements=["C"],
         comments=["single-frame"],
         metadata={"source": "unit-test"},
+        excited_state_records=[
+            {
+                "frame_index": 0,
+                "section_idx": 0,
+                "state_i": 0,
+                "state_j": 1,
+                "multiplicity": "singlet",
+                "total_energy_au": -1.0,
+            }
+        ],
     )
 
     npy_file = tmp_path / "mol.npy"
@@ -64,6 +74,7 @@ def test_npy_roundtrip(tmp_path):
     np.testing.assert_allclose(parsed["xyz"], mol["xyz"])
     assert parsed["elements"] == ["C"]
     assert parsed.metadata["source"] == "unit-test"
+    assert parsed.excited_state_records == mol.excited_state_records
     assert parsed.atom_records is not None
     assert parsed.atom_records["element"].tolist() == ["C"]
 
@@ -79,6 +90,16 @@ def test_hdf5_roundtrip(tmp_path):
         xyz=np.array([[0.1, 0.2, 0.3]], dtype=float),
         elements=["He"],
         metadata={"kind": "hdf5"},
+        excited_state_records=[
+            {
+                "frame_index": 0,
+                "section_idx": 0,
+                "state_i": 0,
+                "state_j": 0,
+                "multiplicity": "singlet",
+                "total_energy_au": -2.0,
+            }
+        ],
     )
 
     h5_file = tmp_path / "mol.hdf5"
@@ -88,6 +109,7 @@ def test_hdf5_roundtrip(tmp_path):
     np.testing.assert_allclose(parsed["xyz"], mol["xyz"])
     assert parsed["elements"] == ["He"]
     assert parsed.metadata["kind"] == "hdf5"
+    assert parsed.excited_state_records == mol.excited_state_records
     assert parsed.atom_records is not None
     assert parsed.atom_records["element"].tolist() == ["He"]
 
@@ -210,3 +232,86 @@ def test_pop_removes_and_returns_atom_record():
     assert mol.atom_records["coords"].shape == (2, 1, 3)
     assert "pdb_raw_lines" not in mol.metadata
     assert mol.metadata["source"] == "unit-test"
+
+
+def test_slice_frames_remaps_excited_state_record_frame_indices():
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0]],
+                [[2.0, 0.0, 0.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["H"],
+        excited_state_records=[
+            {"frame_index": 0, "state_j": 0, "total_energy_au": -1.0},
+            {"frame_index": 1, "state_j": 0, "total_energy_au": -2.0},
+            {"frame_index": 2, "state_j": 0, "total_energy_au": -3.0},
+        ],
+    )
+
+    sliced = mol.slice_frames(1, 3)
+
+    assert sliced.excited_state_records == [
+        {"frame_index": 0, "state_j": 0, "total_energy_au": -2.0},
+        {"frame_index": 1, "state_j": 0, "total_energy_au": -3.0},
+    ]
+
+
+def test_terachem_records_with_frame_indices_maps_section_idx():
+    records = [
+        {"section_idx": 0, "state_j": 0, "total_energy_au": -1.0},
+        {"section_idx": 2, "state_j": 1, "total_energy_au": -0.5},
+    ]
+
+    assert Molecule._terachem_records_with_frame_indices(records) == [
+        {
+            "section_idx": 0,
+            "frame_index": 0,
+            "state_j": 0,
+            "total_energy_au": -1.0,
+        },
+        {
+            "section_idx": 2,
+            "frame_index": 2,
+            "state_j": 1,
+            "total_energy_au": -0.5,
+        },
+    ]
+
+
+def test_excited_state_record_frame_indices_must_match_frame_count():
+    with pytest.raises(ValueError, match="frame_index out of range"):
+        Molecule(
+            xyz=np.array(
+                [
+                    [[0.0, 0.0, 0.0]],
+                    [[1.0, 0.0, 0.0]],
+                ],
+                dtype=float,
+            ),
+            elements=["H"],
+            excited_state_records=[
+                {"frame_index": 2, "state_j": 0, "total_energy_au": -1.0}
+            ],
+        )
+
+
+def test_excited_state_record_assignment_validates_frame_indices():
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["H"],
+    )
+
+    with pytest.raises(ValueError, match="frame_index out of range"):
+        mol.excited_state_records = [
+            {"frame_index": 5, "state_j": 0, "total_energy_au": -1.0}
+        ]
