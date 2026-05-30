@@ -10,10 +10,12 @@ import os
 from molzen.amino_acids import aa2long, aa2num, aa_1_to_3, ncaas, oneletter_code
 from molzen.ptable import symbol_to_z
 from molzen.io.terachem.parse import parse_terachem_output
+from . import dcd as dcd_io
 from . import hdf5 as hdf5_io
 from . import mol2 as mol2_io
 from . import npy as npy_io
 from . import pdb as pdb_io
+from . import rst7 as rst7_io
 from . import xyz as xyz_io
 
 _MISSING = object()
@@ -953,9 +955,7 @@ class Molecule(Mapping[str, Any]):
             atom_records[name] = self._atom_records[name]
         atom_records["coords"] = sliced_coords
 
-        metadata = self.metadata
-        metadata.pop("pdb_raw_lines", None)
-        metadata.pop("pdb_records", None)
+        metadata = self._slice_metadata(selected_frame_indices)
 
         comments_out = None if self._comments is None else self._comments[frames]
         excited_state_records = self._slice_excited_state_records(
@@ -971,6 +971,190 @@ class Molecule(Mapping[str, Any]):
             excited_state_records=excited_state_records,
             _legacy_view=self._legacy_view,
         )
+
+    def _slice_metadata(self, selected_frame_indices: np.ndarray) -> dict[str, Any]:
+        """Return metadata adjusted for a frame slice."""
+        metadata = dict(self.metadata)
+        metadata.pop("pdb_raw_lines", None)
+        metadata.pop("pdb_records", None)
+
+        cat_metadata = metadata.get("cat_frames")
+        if isinstance(cat_metadata, dict):
+            cat_metadata = dict(cat_metadata)
+            raw_boundaries = cat_metadata.get("frame_boundaries")
+            if raw_boundaries is not None:
+                selected = np.asarray(selected_frame_indices, dtype=int)
+                remapped_boundaries = []
+                for raw_boundary in raw_boundaries:
+                    try:
+                        boundary = int(raw_boundary)
+                    except (TypeError, ValueError):
+                        continue
+                    local_boundary = int(np.count_nonzero(selected < boundary))
+                    if 0 < local_boundary < len(selected):
+                        remapped_boundaries.append(local_boundary)
+                cat_metadata["frame_boundaries"] = sorted(set(remapped_boundaries))
+            metadata["cat_frames"] = cat_metadata
+
+        return metadata
+
+    @classmethod
+    def cat_frames(cls, molecules: list[Molecule]) -> Molecule:
+        """Concatenate molecules along the coordinate-frame axis.
+
+        Args:
+            molecules: Molecules with matching atom records to concatenate in order.
+
+        Raises:
+            ValueError: If no molecules are provided, any molecule lacks atom
+                records, atom metadata does not match, or spin multiplicities conflict.
+            TypeError: If any item is not a Molecule.
+
+        Returns:
+            A new Molecule containing all frames from the input molecules.
+        """
+        if not molecules:
+            raise ValueError("At least one molecule is required.")
+        if any(not isinstance(mol, Molecule) for mol in molecules):
+            raise TypeError("All items must be Molecule instances.")
+
+        first = molecules[0]
+        if first.atom_records is None:
+            raise ValueError("All molecules must have atom_records.")
+
+        for i, mol in enumerate(molecules[1:], start=1):
+            if mol.atom_records is None:
+                raise ValueError("All molecules must have atom_records.")
+            cls._validate_frame_concat_compatible(first, mol, index=i)
+
+        n_frames = sum(cls._frame_count(mol.atom_records) for mol in molecules)
+        atom_records = np.zeros(
+            len(first.atom_records), dtype=atom_record_dtype(n_frames)
+        )
+        for name in atom_records.dtype.names or ():
+            if name == "coords":
+                continue
+            atom_records[name] = first.atom_records[name]
+        atom_records["coords"] = np.concatenate(
+            [mol.atom_records["coords"] for mol in molecules],
+            axis=1,
+        )
+
+        comments = cls._cat_frame_comments(molecules)
+        excited_state_records = cls._cat_excited_state_records(molecules)
+        spinmult = cls._cat_spinmult(molecules)
+        metadata = cls._cat_frame_metadata(molecules)
+
+        return cls(
+            atom_records=atom_records,
+            comments=comments,
+            spinmult=spinmult,
+            metadata=metadata,
+            excited_state_records=excited_state_records,
+            _legacy_view=first._legacy_view,
+        )
+
+    @classmethod
+    def _validate_frame_concat_compatible(
+        cls,
+        first: Molecule,
+        other: Molecule,
+        *,
+        index: int,
+    ) -> None:
+        """Validate that two molecules can be concatenated framewise."""
+        first_records = first.atom_records
+        other_records = other.atom_records
+        if first_records is None or other_records is None:
+            raise ValueError("All molecules must have atom_records.")
+        if len(first_records) != len(other_records):
+            raise ValueError(
+                "Cannot concatenate molecules with different atom counts: "
+                f"molecule 0 has {len(first_records)} atoms, molecule {index} has "
+                f"{len(other_records)} atoms."
+            )
+
+        metadata_fields = [
+            name for name in first_records.dtype.names or () if name != "coords"
+        ]
+        for field in metadata_fields:
+            first_values = first_records[field]
+            other_values = other_records[field]
+            if np.issubdtype(first_values.dtype, np.floating):
+                matches = np.allclose(first_values, other_values, equal_nan=True)
+            else:
+                matches = np.array_equal(first_values, other_values)
+            if not matches:
+                raise ValueError(
+                    "Cannot concatenate molecules with different atom metadata: "
+                    f"field {field!r} differs for molecule {index}."
+                )
+
+    @classmethod
+    def _cat_frame_comments(cls, molecules: list[Molecule]) -> list[str] | None:
+        """Concatenate comments, padding missing comments with empty strings."""
+        if not any(mol.comments is not None for mol in molecules):
+            return None
+
+        comments: list[str] = []
+        for mol in molecules:
+            n_frames = cls._frame_count(mol.atom_records)
+            if mol.comments is None:
+                comments.extend([""] * n_frames)
+            else:
+                comments.extend(mol.comments)
+        return comments
+
+    @classmethod
+    def _cat_excited_state_records(
+        cls,
+        molecules: list[Molecule],
+    ) -> list[dict[str, Any]] | None:
+        """Concatenate frame-aligned excited-state records with frame offsets."""
+        records: list[dict[str, Any]] = []
+        frame_offset = 0
+        for mol in molecules:
+            for record in mol.excited_state_records or []:
+                if "frame_index" not in record:
+                    continue
+                new_record = dict(record)
+                new_record["frame_index"] = (
+                    int(new_record["frame_index"]) + frame_offset
+                )
+                records.append(new_record)
+            frame_offset += cls._frame_count(mol.atom_records)
+        return records or None
+
+    @staticmethod
+    def _cat_spinmult(molecules: list[Molecule]) -> int | None:
+        """Return the common non-null spin multiplicity, if any."""
+        spinmults = {mol.spinmult for mol in molecules if mol.spinmult is not None}
+        if len(spinmults) > 1:
+            raise ValueError("Cannot concatenate molecules with different spinmults.")
+        return next(iter(spinmults)) if spinmults else None
+
+    @classmethod
+    def _cat_frame_metadata(cls, molecules: list[Molecule]) -> dict[str, Any]:
+        """Build provenance metadata for a frame concatenation."""
+        segments: list[dict[str, Any]] = []
+        frame_boundaries: list[int] = []
+        frame_start = 0
+        for i, mol in enumerate(molecules):
+            n_frames = cls._frame_count(mol.atom_records)
+            if i > 0:
+                frame_boundaries.append(frame_start)
+            segments.append(
+                {
+                    "molecule_index": i,
+                    "frame_start": frame_start,
+                    "frame_stop": frame_start + n_frames,
+                    "metadata": dict(mol.metadata),
+                }
+            )
+            frame_start += n_frames
+        return {
+            "cat_frames": {"segments": segments, "frame_boundaries": frame_boundaries}
+        }
 
     def _slice_excited_state_records(
         self, selected_frame_indices: np.ndarray
@@ -1277,18 +1461,29 @@ class Molecule(Mapping[str, Any]):
     def show(
         self,
         *,
-        width: int | str = 300,
+        width: int | str = 500,
         height: int | str = 300,
         frame: int | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> Any:
-        """Return a py3Dmol view for the molecule."""
+        """Return a py3Dmol view for the molecule.
+
+        Args:
+            width: Viewer width in pixels or a CSS size string.
+            height: Viewer height in pixels or a CSS size string.
+            frame: Optional frame index to show from the displayed frame range.
+            start: Optional first frame index to include.
+            end: Optional frame index at which to stop, exclusive.
+        """
 
         # optional dependency, so lazy import
         from molzen.visualize import show_molecule
 
+        mol = self if start is None and end is None else self.slice_frames(start, end)
         width_str = f"{width}px" if isinstance(width, int) else width
         height_str = f"{height}px" if isinstance(height, int) else height
-        return show_molecule(self, width=width_str, height=height_str, frame=frame)
+        return show_molecule(mol, width=width_str, height=height_str, frame=frame)
 
     @classmethod
     def from_xyz(cls, file_path: str) -> Molecule:
@@ -1373,6 +1568,114 @@ class Molecule(Mapping[str, Any]):
         )
 
     @classmethod
+    def from_rst7(
+        cls,
+        rst7_path: str,
+        prmtop_path: str,
+        qmindices_path: str | None = None,
+    ) -> Molecule:
+        """Load Amber restart coordinates with labels from a prmtop file.
+
+        Args:
+            rst7_path: Path to the Amber restart file.
+            prmtop_path: Path to the Amber topology file.
+            qmindices_path: Optional path to a TeraChem QM atom index file. If
+                provided, only those atoms are included.
+        """
+        payload = rst7_io.parse_rst7_with_prmtop(
+            rst7_path,
+            prmtop_path,
+            qmindices_fp=qmindices_path,
+        )
+
+        metadata = payload["metadata"]
+        bootstrap = cls(
+            xyz=payload["xyz"],
+            elements=payload["elements"],
+            metadata=metadata,
+            _legacy_view="xyz",
+        )
+        atom_records = bootstrap._build_atom_records_from_atom_major(
+            xyz=payload["xyz"],
+            atom_names=payload["atom_names"],
+            elements=payload["elements"],
+            record_name="HETATM",
+            entity_kind="unknown",
+            res_names=payload["res_names"],
+            res_nums=payload["res_nums"],
+            serials=payload["serials"],
+            atom_types=payload["atom_types"],
+        )
+        atom_records["entity_kind"] = [
+            cls._infer_entity_kind(record_name, res_name, element)
+            for record_name, res_name, element in zip(
+                atom_records["record_name"],
+                atom_records["res_name"],
+                atom_records["element"],
+                strict=False,
+            )
+        ]
+        return cls(
+            atom_records=atom_records,
+            metadata=metadata,
+            _legacy_view="xyz",
+        )
+
+    @classmethod
+    def from_dcd(
+        cls,
+        dcd_path: str,
+        prmtop_path: str,
+        qmindices_path: str | None = None,
+    ) -> Molecule:
+        """Load DCD trajectory coordinates with labels from a prmtop file.
+
+        Args:
+            dcd_path: Path to the DCD trajectory file.
+            prmtop_path: Path to the Amber topology file.
+            qmindices_path: Optional path to a TeraChem QM atom index file. If
+                provided, only those atoms are included.
+        """
+        payload = dcd_io.parse_dcd_with_prmtop(
+            dcd_path,
+            prmtop_path,
+            qmindices_fp=qmindices_path,
+        )
+
+        metadata = payload["metadata"]
+        bootstrap = cls(
+            xyz=payload["xyz"],
+            elements=payload["elements"],
+            metadata=metadata,
+            _legacy_view="xyz",
+        )
+        atom_records = bootstrap._build_atom_records_from_atom_major(
+            xyz=payload["xyz"],
+            atom_names=payload["atom_names"],
+            elements=payload["elements"],
+            record_name="HETATM",
+            entity_kind="unknown",
+            res_names=payload["res_names"],
+            res_nums=payload["res_nums"],
+            serials=payload["serials"],
+            atom_types=payload["atom_types"],
+        )
+        atom_records["entity_kind"] = [
+            cls._infer_entity_kind(record_name, res_name, element)
+            for record_name, res_name, element in zip(
+                atom_records["record_name"],
+                atom_records["res_name"],
+                atom_records["element"],
+                strict=False,
+            )
+        ]
+        return cls(
+            atom_records=atom_records,
+            metadata=metadata,
+            _legacy_view="xyz",
+        )
+
+    @classmethod
     def from_npy(cls, file_path: str) -> Molecule:
         """Load a molecule from an NPY file path."""
         payload = npy_io.parse_npy(file_path)
@@ -1397,13 +1700,36 @@ class Molecule(Mapping[str, Any]):
         hdf5_io.write_hdf5(file_path, self._legacy_serialization_payload())
 
     @classmethod
-    def from_terachem_stdout(cls, file_path: str, raw_str_in: bool = False) -> Molecule:
+    def from_terachem_stdout(
+        cls,
+        file_path: str,
+        raw_str_in: bool = False,
+        *,
+        dcd_path: str | None = None,
+        rst7_path: str | None = None,
+        prmtop_path: str | None = None,
+        qmindices_path: str | None = None,
+    ) -> Molecule:
         """Load a molecule from a TeraChem stdout file path.
 
         Args:
             file_path: Path to a terachem stdout, or raw terachem stdout string
             raw_str_in: If True, treat file_path as a raw terachem stdout string instead of a file path.
+            dcd_path: Optional override path to a DCD trajectory file. If provided,
+                this file is used instead of discovering coordinates from the
+                parsed TeraChem input or scratch directory.
+            rst7_path: Optional override path to an Amber restart file. If provided,
+                this file is used instead of discovering coordinates from the
+                parsed TeraChem input or scratch directory.
+            prmtop_path: Optional override path to an Amber topology file. Used
+                when the selected coordinate file is an Amber restart or DCD trajectory.
+            qmindices_path: Optional override path to a TeraChem QM atom index
+                file. Used when the selected coordinate file is an Amber restart
+                or DCD trajectory.
         """
+
+        if dcd_path is not None and rst7_path is not None:
+            raise ValueError("Provide either dcd_path or rst7_path, not both.")
 
         # parse the stdout
         parsed = parse_terachem_output(file_path, raw_str_in=raw_str_in)
@@ -1412,36 +1738,189 @@ class Molecule(Mapping[str, Any]):
             parsed.get("excited_state_records", [])
         )
 
+        stdout_dir = (
+            os.getcwd()
+            if raw_str_in
+            else os.path.dirname(os.path.abspath(file_path)) or os.getcwd()
+        )
+
         # determine runtype and location of crds
-        scrdir = inputs["scrdir"]
+        scrdir = cls._resolve_terachem_scrdir(
+            inputs["scrdir"],
+            stdout_dir,
+            None if raw_str_in else file_path,
+        )
         runtype = inputs["run"]
 
-        # for now, assuming that we will be grabbing .xyz files. Add support for other formats later if needed.
-        if runtype in ("energy", "gradient"):
-            xyz_path = inputs["coordinates"]
+        if dcd_path is not None:
+            structure_path = cls._resolve_terachem_path(
+                dcd_path,
+                stdout_dir,
+                scrdir=scrdir,
+            )
+        elif rst7_path is not None:
+            structure_path = cls._resolve_terachem_path(
+                rst7_path,
+                stdout_dir,
+                scrdir=scrdir,
+            )
+        elif runtype in ("energy", "gradient"):
+            structure_path = cls._resolve_terachem_path(
+                inputs["coordinates"],
+                stdout_dir,
+                scrdir=scrdir,
+            )
         elif runtype in ("minimize", "conical"):
-            xyz_path = os.path.join(scrdir, "optim.xyz")
+            optim_dcd_path = os.path.join(scrdir, "optim.dcd")
+            optim_xyz_path = os.path.join(scrdir, "optim.xyz")
+            optim_rst7_path = os.path.join(scrdir, "optim.rst7")
+            has_optim_dcd = os.path.exists(optim_dcd_path)
+            has_optim_xyz = os.path.exists(optim_xyz_path)
+            has_optim_rst7 = os.path.exists(optim_rst7_path)
+
+            if has_optim_dcd:
+                structure_path = optim_dcd_path
+            elif has_optim_xyz and has_optim_rst7:
+                raise ValueError(
+                    "Ambiguous TeraChem optimization structures: found both "
+                    f"{optim_xyz_path} and {optim_rst7_path}."
+                )
+            elif has_optim_rst7:
+                structure_path = optim_rst7_path
+            else:
+                structure_path = optim_xyz_path
         else:
             raise ValueError(
                 f"Unknown TeraChem runtype '{runtype}' in parsed stdout. Add handling in Molecule() if needed."
             )
 
-        assert os.path.exists(xyz_path), (
-            f"Expected .xyz file not found at {xyz_path}. Either (A) double check it wasn't moved or (B) add handling of other structure file types (e.g., .rst7)"
-        )
+        if not os.path.exists(structure_path):
+            raise FileNotFoundError(
+                f"Expected TeraChem structure file not found at {structure_path}."
+            )
 
         # NOTE: for now, i guess metadata will just have the input args?
         # seems slightly wasteful, unsure
         metadata = {"terachem_input_args": inputs}
 
-        # now assuming .xyz
-        xyz_payload = xyz_io.parse_xyz(xyz_path)
-
-        out = cls(
-            _legacy_view="xyz",
-            **xyz_payload,
-            metadata=metadata,
-            excited_state_records=excited_state_records,
-        )
+        structure_ext = os.path.splitext(structure_path)[1].lower()
+        if structure_ext in (".rst7", ".dcd"):
+            if prmtop_path is None and inputs.get("prmtop") is None:
+                raise ValueError(
+                    "A prmtop path is required to parse Amber coordinate files."
+                )
+            resolved_prmtop_path = cls._resolve_terachem_path(
+                prmtop_path if prmtop_path is not None else inputs["prmtop"],
+                stdout_dir,
+                scrdir=scrdir,
+            )
+            resolved_qmindices_path = None
+            if qmindices_path is not None:
+                resolved_qmindices_path = cls._resolve_terachem_path(
+                    qmindices_path,
+                    stdout_dir,
+                    scrdir=scrdir,
+                )
+            elif inputs.get("qmindices") is not None:
+                resolved_qmindices_path = cls._resolve_terachem_path(
+                    inputs["qmindices"],
+                    stdout_dir,
+                    scrdir=scrdir,
+                )
+            if structure_ext == ".dcd":
+                out = cls.from_dcd(
+                    structure_path,
+                    resolved_prmtop_path,
+                    qmindices_path=resolved_qmindices_path,
+                )
+            else:
+                out = cls.from_rst7(
+                    structure_path,
+                    resolved_prmtop_path,
+                    qmindices_path=resolved_qmindices_path,
+                )
+            out.metadata.update(metadata)
+            out.excited_state_records = excited_state_records
+        else:
+            xyz_payload = xyz_io.parse_xyz(structure_path)
+            out = cls(
+                _legacy_view="xyz",
+                **xyz_payload,
+                metadata=metadata,
+                excited_state_records=excited_state_records,
+            )
 
         return out
+
+    @staticmethod
+    def _resolve_terachem_path(
+        path: str,
+        stdout_dir: str,
+        scrdir: str | None = None,
+    ) -> str:
+        """Resolve a TeraChem input path against common run directories.
+
+        Args:
+            path: Raw path value from the parsed TeraChem input.
+            stdout_dir: Directory containing the stdout file.
+            scrdir: Optional resolved TeraChem scratch directory.
+        """
+        if os.path.isabs(path):
+            return path
+
+        candidates = [os.path.abspath(os.path.join(stdout_dir, path))]
+        if scrdir is not None:
+            candidates.append(os.path.abspath(os.path.join(scrdir, path)))
+        candidates.append(os.path.abspath(path))
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return candidates[0]
+
+    @classmethod
+    def _resolve_terachem_scrdir(
+        cls,
+        scrdir: str,
+        stdout_dir: str,
+        stdout_path: str | None = None,
+    ) -> str:
+        """Resolve a TeraChem scratch directory with stdout-tag fallback.
+
+        Args:
+            scrdir: Raw scrdir value from the parsed TeraChem input.
+            stdout_dir: Directory containing the stdout file.
+            stdout_path: Optional stdout file path. If its basename is
+                ``stdout_<tag>.log``, ``tc_scr.<tag>`` beside the stdout file is
+                tried when the parsed scrdir path does not exist.
+        """
+        resolved_scrdir = cls._resolve_terachem_path(scrdir, stdout_dir)
+        if os.path.isdir(resolved_scrdir):
+            return resolved_scrdir
+
+        tag = cls._terachem_stdout_tag(stdout_path)
+        if tag is not None:
+            candidate = os.path.abspath(os.path.join(stdout_dir, f"tc_scr.{tag}"))
+            if os.path.isdir(candidate):
+                return candidate
+
+        return resolved_scrdir
+
+    @staticmethod
+    def _terachem_stdout_tag(stdout_path: str | None) -> str | None:
+        """Return the tag from a ``stdout_<tag>.log`` filename.
+
+        Args:
+            stdout_path: Optional stdout file path.
+        """
+        if stdout_path is None:
+            return None
+
+        basename = os.path.basename(stdout_path)
+        prefix = "stdout_"
+        suffix = ".log"
+        if not basename.startswith(prefix) or not basename.endswith(suffix):
+            return None
+
+        tag = basename[len(prefix) : -len(suffix)]
+        return tag or None

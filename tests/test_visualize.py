@@ -143,11 +143,39 @@ def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
         ({}, {"stick": {"radius": 0.12}, "sphere": {"scale": 0.25}}),
         ({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}}),
     ]
-    assert "width: 300px" in view.startjs
+    assert "width: 500px" in view.startjs
     assert "margin: 4px auto 0 auto" in view.startjs
     assert 'max="1"' in view.startjs
     assert "setFrame(frame)" in view.startjs
     assert view.zoomed
+
+
+def test_show_can_limit_displayed_frame_range(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0]],
+                [[2.0, 0.0, 0.0]],
+                [[3.0, 0.0, 0.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["H"],
+    )
+
+    view = mol.show(start=1, end=3)
+
+    assert view.frames_format == "xyz"
+    assert view.frames_text.count("1\nFrame") == 2
+    assert "H 0.00000000 0.00000000 0.00000000" not in view.frames_text
+    assert "H 1.00000000 0.00000000 0.00000000" in view.frames_text
+    assert "H 2.00000000 0.00000000 0.00000000" in view.frames_text
+    assert "H 3.00000000 0.00000000 0.00000000" not in view.frames_text
+    assert 'max="1"' in view.startjs
 
 
 def test_show_multiframe_molecule_adds_excited_state_energy_plot(monkeypatch) -> None:
@@ -210,6 +238,42 @@ def test_show_multiframe_molecule_adds_excited_state_energy_plot(monkeypatch) ->
     assert 'height="300"' in view.startjs
     assert "S0" in view.startjs
     assert "S1" in view.startjs
+    assert 'color: #c2410c; white-space: nowrap;">S0-&gt;S1' in view.startjs
+
+
+def test_show_marks_cat_frame_boundaries_in_state_plots(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol_a = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["H"],
+        excited_state_records=[
+            {"frame_index": 0, "state_j": 0, "total_energy_au": -10.0},
+            {"frame_index": 1, "state_j": 0, "total_energy_au": -9.0},
+        ],
+    )
+    mol_b = Molecule(
+        xyz=np.array([[[2.0, 0.0, 0.0]]], dtype=float),
+        elements=["H"],
+        excited_state_records=[
+            {"frame_index": 0, "state_j": 0, "total_energy_au": -8.0},
+        ],
+    )
+    mol = Molecule.cat_frames([mol_a, mol_b])
+
+    view = mol.show()
+
+    assert mol.metadata["cat_frames"]["frame_boundaries"] == [2]
+    assert "molzen_cat_boundary_UNIQUEID" in view.startjs
+    assert 'stroke-dasharray="4 4"' in view.startjs
+    assert 'stroke="#9ca3af"' in view.startjs
 
 
 def test_excited_state_energy_series_converts_hartree_to_relative_ev() -> None:
@@ -248,7 +312,7 @@ def test_excited_state_oscillator_strength_series_uses_s0_to_sn_records() -> Non
         ]
     )
 
-    assert series == [{"label": "S0->S1", "x": [0], "y": [0.25]}]
+    assert series == [{"label": "S0->S1", "x": [0], "y": [0.25], "color_index": 1}]
 
 
 def test_show_explicit_frame(monkeypatch) -> None:
