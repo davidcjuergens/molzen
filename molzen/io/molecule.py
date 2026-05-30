@@ -1152,7 +1152,9 @@ class Molecule(Mapping[str, Any]):
                 }
             )
             frame_start += n_frames
-        return {"cat_frames": {"segments": segments, "frame_boundaries": frame_boundaries}}
+        return {
+            "cat_frames": {"segments": segments, "frame_boundaries": frame_boundaries}
+        }
 
     def _slice_excited_state_records(
         self, selected_frame_indices: np.ndarray
