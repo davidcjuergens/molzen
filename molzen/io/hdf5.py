@@ -16,6 +16,7 @@ _ALLOWED_KEYS = {
     "seq",
     "hetatm",
     "metadata",
+    "excited_state_records",
 }
 
 

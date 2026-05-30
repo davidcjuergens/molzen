@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import Any, Iterator, Mapping
 
 import numpy as np
+import os
 
 from molzen.amino_acids import aa2long, aa2num, aa_1_to_3, ncaas, oneletter_code
 from molzen.ptable import symbol_to_z
+from molzen.io.terachem.parse import parse_terachem_output
 from . import hdf5 as hdf5_io
 from . import mol2 as mol2_io
 from . import npy as npy_io
@@ -89,6 +91,7 @@ class Molecule(Mapping[str, Any]):
         "spinmult",
         "seq",
         "hetatm",
+        "excited_state_records",
     )
 
     def __init__(
@@ -102,8 +105,10 @@ class Molecule(Mapping[str, Any]):
         hetatm: np.ndarray | None = None,
         metadata: dict[str, Any] | None = None,
         atom_records: np.ndarray | None = None,
+        excited_state_records: list[dict[str, Any]] | None = None,
         _legacy_view: str | None = None,
     ) -> None:
+
         self._legacy_view = _legacy_view or self._infer_legacy_view(
             xyz=xyz,
             atom_names=atom_names,
@@ -113,10 +118,13 @@ class Molecule(Mapping[str, Any]):
             hetatm=hetatm,
             metadata=metadata,
         )
+
         self._atom_records: np.ndarray | None = None
         self._comments: list[str] | None = None
         self._spinmult: int | None = None
         self._metadata: dict[str, Any] = {}
+        self._excited_state_records: list[dict[str, Any]] | None = None
+        self.excited_state_records = excited_state_records
 
         self.comments = comments
         self.spinmult = spinmult
@@ -174,7 +182,36 @@ class Molecule(Mapping[str, Any]):
             records
         ):
             raise ValueError("comments length must match number of coordinate frames.")
+        self._validate_excited_state_frame_indices(self._frame_count(records))
         self._atom_records = records
+
+    def _validate_excited_state_frame_indices(self, n_frames: int) -> None:
+        """Validate frame-aligned excited-state records against coordinate frames."""
+        if self._excited_state_records is None:
+            return
+
+        for i, record in enumerate(self._excited_state_records):
+            if "frame_index" not in record:
+                continue
+            try:
+                frame_index = float(record["frame_index"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "excited_state_records frame_index values must be numeric."
+                ) from exc
+
+            if not frame_index.is_integer():
+                raise ValueError(
+                    "excited_state_records frame_index values must be integers."
+                )
+
+            frame_index_int = int(frame_index)
+            if frame_index_int < 0 or frame_index_int >= n_frames:
+                raise ValueError(
+                    "excited_state_records frame_index out of range: "
+                    f"record {i} has frame_index={frame_index_int}, "
+                    f"but molecule has {n_frames} frame(s)."
+                )
 
     @property
     def shape(self):
@@ -852,6 +889,8 @@ class Molecule(Mapping[str, Any]):
             payload["metadata"] = self.metadata
         if self.spinmult is not None:
             payload["spinmult"] = self.spinmult
+        if self.excited_state_records is not None:
+            payload["excited_state_records"] = self.excited_state_records
         return payload
 
     def _present_items(self, include_atom_records: bool = True) -> dict[str, Any]:
@@ -897,6 +936,9 @@ class Molecule(Mapping[str, Any]):
         else:
             frames = slice(start, stop, step)
 
+        n_total_frames = self._frame_count(self._atom_records)
+        selected_frame_indices = np.arange(n_total_frames)[frames]
+
         # grab coordinates corresponding to desired slice
         sliced_coords = self._atom_records["coords"][:, frames, :]
         # create a new atom_records array to populate
@@ -916,6 +958,9 @@ class Molecule(Mapping[str, Any]):
         metadata.pop("pdb_records", None)
 
         comments_out = None if self._comments is None else self._comments[frames]
+        excited_state_records = self._slice_excited_state_records(
+            selected_frame_indices
+        )
 
         # make new Molecule instance with sliced data
         return Molecule(
@@ -923,8 +968,39 @@ class Molecule(Mapping[str, Any]):
             comments=comments_out,
             spinmult=self.spinmult,
             metadata=metadata,
+            excited_state_records=excited_state_records,
             _legacy_view=self._legacy_view,
         )
+
+    def _slice_excited_state_records(
+        self, selected_frame_indices: np.ndarray
+    ) -> list[dict[str, Any]] | None:
+        """Return excited-state records for selected frames with remapped indices."""
+        if self._excited_state_records is None:
+            return None
+
+        # Build a lookup from original frame numbers to the new local frame numbers
+        # in the sliced molecule. For example, slicing frames 10:12 maps 10 -> 0
+        # and 11 -> 1.
+        old_to_new = {
+            int(old_frame): int(new_frame)
+            for new_frame, old_frame in enumerate(selected_frame_indices.tolist())
+        }
+        sliced_records: list[dict[str, Any]] = []
+        for record in self._excited_state_records:
+            # Records without a frame index cannot be safely associated with this
+            # slice, so drop them instead of carrying stale frame-aligned data.
+            if "frame_index" not in record:
+                continue
+            old_frame = int(record["frame_index"])
+            if old_frame not in old_to_new:
+                continue
+            # Copy the record before mutating so the original molecule keeps its
+            # original frame numbering.
+            new_record = dict(record)
+            new_record["frame_index"] = old_to_new[old_frame]
+            sliced_records.append(new_record)
+        return sliced_records
 
     def __getitem__(self, key: str | slice) -> Any:
         """Get a molecule property by key OR return a Molecule() with data at selected frames if key is a slice."""
@@ -1001,6 +1077,8 @@ class Molecule(Mapping[str, Any]):
                 parts.append(f"hetatm={hetatm_count}")
         if self.metadata:
             parts.append(f"metadata_keys={sorted(self.metadata)}")
+        if self.excited_state_records is not None:
+            parts.append(f"excited_state_records={len(self.excited_state_records)}")
 
         if not parts:
             return "Molecule()"
@@ -1155,6 +1233,47 @@ class Molecule(Mapping[str, Any]):
             return None
         return np.array([symbol_to_z[e.capitalize()] for e in elements], dtype=int)
 
+    @property
+    def excited_state_records(self) -> list[dict[str, Any]] | None:
+        return (
+            None
+            if self._excited_state_records is None
+            else [dict(record) for record in self._excited_state_records]
+        )
+
+    @excited_state_records.setter
+    def excited_state_records(self, value: list[dict[str, Any]] | None) -> None:
+        if value is None:
+            self._excited_state_records = None
+            return
+        self._excited_state_records = [dict(record) for record in value]
+        if self._atom_records is not None:
+            self._validate_excited_state_frame_indices(
+                self._frame_count(self._atom_records)
+            )
+
+    @staticmethod
+    def _terachem_records_with_frame_indices(
+        records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Map parser section indices onto molecule frame indices."""
+        out: list[dict[str, Any]] = []
+        for record in records:
+            new_record = dict(record)
+            # Current TeraChem optimization outputs appear to write excited-state
+            # sections in the same order as frames in optim.xyz.
+            if "frame_index" not in new_record and "section_idx" in new_record:
+                try:
+                    section_idx = float(new_record["section_idx"])
+                except (TypeError, ValueError):
+                    section_idx = np.nan
+                # Keep records without a usable section index, but only assign
+                # frame_index when the parser gave us a finite numeric section.
+                if np.isfinite(section_idx):
+                    new_record["frame_index"] = int(section_idx)
+            out.append(new_record)
+        return out
+
     def show(
         self,
         *,
@@ -1276,3 +1395,53 @@ class Molecule(Mapping[str, Any]):
     def to_hdf5(self, file_path: str) -> None:
         """Write this molecule to HDF5 format."""
         hdf5_io.write_hdf5(file_path, self._legacy_serialization_payload())
+
+    @classmethod
+    def from_terachem_stdout(cls, file_path: str, raw_str_in: bool = False) -> Molecule:
+        """Load a molecule from a TeraChem stdout file path.
+
+        Args:
+            file_path: Path to a terachem stdout, or raw terachem stdout string
+            raw_str_in: If True, treat file_path as a raw terachem stdout string instead of a file path.
+        """
+
+        # parse the stdout
+        parsed = parse_terachem_output(file_path, raw_str_in=raw_str_in)
+        inputs = parsed["input_args"]  # inputs to terachem
+        excited_state_records = cls._terachem_records_with_frame_indices(
+            parsed.get("excited_state_records", [])
+        )
+
+        # determine runtype and location of crds
+        scrdir = inputs["scrdir"]
+        runtype = inputs["run"]
+
+        # for now, assuming that we will be grabbing .xyz files. Add support for other formats later if needed.
+        if runtype in ("energy", "gradient"):
+            xyz_path = inputs["coordinates"]
+        elif runtype in ("minimize", "conical"):
+            xyz_path = os.path.join(scrdir, "optim.xyz")
+        else:
+            raise ValueError(
+                f"Unknown TeraChem runtype '{runtype}' in parsed stdout. Add handling in Molecule() if needed."
+            )
+
+        assert os.path.exists(xyz_path), (
+            f"Expected .xyz file not found at {xyz_path}. Either (A) double check it wasn't moved or (B) add handling of other structure file types (e.g., .rst7)"
+        )
+
+        # NOTE: for now, i guess metadata will just have the input args?
+        # seems slightly wasteful, unsure
+        metadata = {"terachem_input_args": inputs}
+
+        # now assuming .xyz
+        xyz_payload = xyz_io.parse_xyz(xyz_path)
+
+        out = cls(
+            _legacy_view="xyz",
+            **xyz_payload,
+            metadata=metadata,
+            excited_state_records=excited_state_records,
+        )
+
+        return out

@@ -11,6 +11,11 @@ import numpy as np
 import pytest
 
 from molzen.io.molecule import Molecule, atom_record_dtype
+from molzen.constants import HARTREE2EV
+from molzen.visualize import (
+    _excited_state_energy_series,
+    _excited_state_oscillator_strength_series,
+)
 
 
 class FakePy3DmolView:
@@ -143,6 +148,107 @@ def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
     assert 'max="1"' in view.startjs
     assert "setFrame(frame)" in view.startjs
     assert view.zoomed
+
+
+def test_show_multiframe_molecule_adds_excited_state_energy_plot(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["H"],
+        excited_state_records=[
+            {
+                "frame_index": 0,
+                "state_j": 0,
+                "multiplicity": "singlet",
+                "total_energy_au": -10.0,
+            },
+            {
+                "frame_index": 1,
+                "state_j": 0,
+                "multiplicity": "singlet",
+                "total_energy_au": -11.0,
+            },
+            {
+                "frame_index": 0,
+                "state_i": 0,
+                "state_j": 1,
+                "multiplicity": "singlet",
+                "total_energy_au": -9.0,
+                "osc_strength": 0.1,
+            },
+            {
+                "frame_index": 1,
+                "state_i": 0,
+                "state_j": 1,
+                "multiplicity": "singlet",
+                "total_energy_au": -9.5,
+                "osc_strength": 0.2,
+            },
+        ],
+    )
+
+    view = mol.show()
+
+    assert "molzen_energy_panel_UNIQUEID" in view.startjs
+    assert "molzen_oscillator_panel_UNIQUEID" in view.startjs
+    assert "molzen_show_outer_UNIQUEID" in view.startjs
+    assert "display: inline-flex" in view.startjs
+    assert "State energies rel. S0 frame 1 (eV)" in view.startjs
+    assert "S0 -&gt; Sn oscillator strengths" in view.startjs
+    assert "S0-&gt;S1" in view.startjs
+    assert "molzen_plot_cursor_UNIQUEID" in view.startjs
+    assert "window.molzenUpdateEnergyFrame_UNIQUEID" in view.startjs
+    assert "molzenUpdateEnergyFrame_UNIQUEID(frame)" in view.startjs
+    assert 'height="300"' in view.startjs
+    assert "S0" in view.startjs
+    assert "S1" in view.startjs
+
+
+def test_excited_state_energy_series_converts_hartree_to_relative_ev() -> None:
+    series = _excited_state_energy_series(
+        [
+            {
+                "frame_index": 0,
+                "state_j": 0,
+                "multiplicity": "singlet",
+                "total_energy_au": -2.0,
+            },
+            {
+                "frame_index": 0,
+                "state_j": 1,
+                "multiplicity": "singlet",
+                "total_energy_au": -1.5,
+            }
+        ]
+    )
+
+    assert series[0]["y"] == [0.0]
+    assert series[1]["y"] == pytest.approx([0.5 * HARTREE2EV])
+
+
+def test_excited_state_oscillator_strength_series_uses_s0_to_sn_records() -> None:
+    series = _excited_state_oscillator_strength_series(
+        [
+            {"frame_index": 0, "state_i": 0, "state_j": 0, "osc_strength": 0.0},
+            {
+                "frame_index": 0,
+                "state_i": 0,
+                "state_j": 1,
+                "multiplicity": "singlet",
+                "osc_strength": 0.25,
+            },
+        ]
+    )
+
+    assert series == [{"label": "S0->S1", "x": [0], "y": [0.25]}]
 
 
 def test_show_explicit_frame(monkeypatch) -> None:
