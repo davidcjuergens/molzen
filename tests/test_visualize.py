@@ -226,7 +226,7 @@ def test_excited_state_energy_series_converts_hartree_to_relative_ev() -> None:
                 "state_j": 1,
                 "multiplicity": "singlet",
                 "total_energy_au": -1.5,
-            }
+            },
         ]
     )
 

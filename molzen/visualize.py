@@ -351,12 +351,11 @@ def _state_trace_plot_html(
                 for j, (x, y) in enumerate(points)
             )
             path_parts.append(
-                f'<path d="{path}" fill="none" stroke="{color}" '
-                'stroke-width="1.5" />'
+                f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.5" />'
             )
         label_parts.append(
             f'<span style="color: {color}; white-space: nowrap;">'
-            f'{html.escape(str(item["label"]))}</span>'
+            f"{html.escape(str(item['label']))}</span>"
         )
 
     tick_parts = []
@@ -377,15 +376,15 @@ def _state_trace_plot_html(
 <div id="molzen_{panel_id}_panel_UNIQUEID" style="width: {plot_width}px; font: 12px sans-serif;">
   <svg id="molzen_{panel_id}_svg_UNIQUEID" width="{plot_width}" height="{plot_height}" viewBox="0 0 {plot_width} {plot_height}" role="img" aria-label="{escaped_title}">
     <rect x="0" y="0" width="{plot_width}" height="{plot_height}" fill="white" />
-    {''.join(tick_parts)}
+    {"".join(tick_parts)}
     <line x1="{margin_left}" y1="{margin_top}" x2="{margin_left}" y2="{margin_top + inner_height}" stroke="#444" stroke-width="1" />
     <line x1="{margin_left}" y1="{margin_top + inner_height}" x2="{margin_left + inner_width}" y2="{margin_top + inner_height}" stroke="#444" stroke-width="1" />
     <text x="{plot_width / 2:.2f}" y="14" fill="#222" text-anchor="middle" font-size="14" font-weight="600">{escaped_title}</text>
     <text x="{margin_left}" y="{plot_height - 8}" fill="#555">Frame</text>
-    {''.join(path_parts)}
+    {"".join(path_parts)}
     <line class="molzen_plot_cursor_UNIQUEID" x1="{cursor_x:.2f}" y1="{margin_top}" x2="{cursor_x:.2f}" y2="{margin_top + inner_height}" stroke="#111" stroke-width="1" opacity="0.8" />
   </svg>
-  <div style="display: flex; gap: 8px; flex-wrap: wrap; line-height: 1.3;">{''.join(label_parts)}</div>
+  <div style="display: flex; gap: 8px; flex-wrap: wrap; line-height: 1.3;">{"".join(label_parts)}</div>
 </div>
 """
 
