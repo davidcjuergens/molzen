@@ -206,6 +206,7 @@ def _excited_state_oscillator_strength_series(
                 "label": labels[key],
                 "x": frames,
                 "y": [frame_to_osc[frame] for frame in frames],
+                "color_index": key[2],
             }
         )
     return sorted(series, key=lambda item: item["label"])
@@ -288,6 +289,7 @@ def _state_trace_plot_html(
     n_frames: int,
     frame: int | None,
     plot_height: int,
+    frame_boundaries: list[int] | None = None,
 ) -> str:
     """Return SVG HTML for one frame-indexed trace plot."""
     plot_width = 360
@@ -330,10 +332,25 @@ def _state_trace_plot_html(
     def y_px(energy: float) -> float:
         return margin_top + inner_height * ((y_max - energy) / (y_max - y_min))
 
+    boundary_parts = []
+    for boundary in frame_boundaries or []:
+        if boundary <= 0 or boundary >= n_frames:
+            continue
+        x = x_px(boundary)
+        boundary_parts.append(
+            f'<line class="molzen_cat_boundary_UNIQUEID" x1="{x:.2f}" '
+            f'y1="{margin_top}" x2="{x:.2f}" '
+            f'y2="{margin_top + inner_height}" stroke="#9ca3af" '
+            'stroke-width="1" stroke-dasharray="4 4" opacity="0.55" />'
+        )
+
     path_parts = []
     label_parts = []
     for i, item in enumerate(series):
-        color = colors[i % len(colors)]
+        color_index = item.get("color_index", i)
+        if not isinstance(color_index, int):
+            color_index = i
+        color = colors[color_index % len(colors)]
         points = [
             (x_px(int(frame_index)), y_px(float(energy)))
             for frame_index, energy in zip(item["x"], item["y"])
@@ -381,6 +398,7 @@ def _state_trace_plot_html(
     <line x1="{margin_left}" y1="{margin_top + inner_height}" x2="{margin_left + inner_width}" y2="{margin_top + inner_height}" stroke="#444" stroke-width="1" />
     <text x="{plot_width / 2:.2f}" y="14" fill="#222" text-anchor="middle" font-size="14" font-weight="600">{escaped_title}</text>
     <text x="{margin_left}" y="{plot_height - 8}" fill="#555">Frame</text>
+    {"".join(boundary_parts)}
     {"".join(path_parts)}
     <line class="molzen_plot_cursor_UNIQUEID" x1="{cursor_x:.2f}" y1="{margin_top}" x2="{cursor_x:.2f}" y2="{margin_top + inner_height}" stroke="#111" stroke-width="1" opacity="0.8" />
   </svg>
@@ -393,6 +411,7 @@ def _add_state_property_plots(
     view: Any,
     *,
     records: list[dict[str, Any]] | None,
+    metadata: dict[str, Any] | None,
     n_frames: int,
     frame: int | None,
     height: str | int,
@@ -403,6 +422,7 @@ def _add_state_property_plots(
     if not energy_series and not oscillator_series:
         return
 
+    frame_boundaries = _cat_frame_boundaries(metadata, n_frames)
     plot_height = max(_pixel_size(height, 300), 180)
     plot_html = """
 <div id="molzen_show_outer_UNIQUEID" style="display: flex; justify-content: center; width: 100%;">
@@ -417,6 +437,7 @@ def _add_state_property_plots(
             n_frames=n_frames,
             frame=frame,
             plot_height=plot_height,
+            frame_boundaries=frame_boundaries,
         )
     if oscillator_series:
         graph_html += _state_trace_plot_html(
@@ -426,6 +447,7 @@ def _add_state_property_plots(
             n_frames=n_frames,
             frame=frame,
             plot_height=plot_height,
+            frame_boundaries=frame_boundaries,
         )
 
     x_margin_left = 48
@@ -464,6 +486,37 @@ window.molzenUpdateEnergyFrame_UNIQUEID = function(frame) {{
     view.startjs += script
 
 
+def _cat_frame_boundaries(metadata: dict[str, Any] | None, n_frames: int) -> list[int]:
+    """Return valid frame-boundary indices from concatenation metadata."""
+    if not metadata:
+        return []
+
+    cat_metadata = metadata.get("cat_frames")
+    if not isinstance(cat_metadata, dict):
+        return []
+
+    raw_boundaries = cat_metadata.get("frame_boundaries")
+    if raw_boundaries is None:
+        segments = cat_metadata.get("segments")
+        if not isinstance(segments, list):
+            return []
+        raw_boundaries = [
+            segment.get("frame_start")
+            for segment in segments[1:]
+            if isinstance(segment, dict)
+        ]
+
+    boundaries: list[int] = []
+    for value in raw_boundaries:
+        try:
+            boundary = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 < boundary < n_frames and boundary not in boundaries:
+            boundaries.append(boundary)
+    return sorted(boundaries)
+
+
 def _apply_py3dmol_style(view: Any, style: dict[str, Any] | None) -> None:
     """Apply either a caller-provided style or Molzen's default molecule style."""
     if style is not None:
@@ -477,7 +530,7 @@ def _apply_py3dmol_style(view: Any, style: dict[str, Any] | None) -> None:
 def show_molecule_py3dmol(
     mol: Molecule,
     *,
-    width: str | int = "300px",
+    width: str | int = "500px",
     height: str | int = "300px",
     frame: int | None = None,
     style: dict[str, Any] | None = None,
@@ -488,7 +541,7 @@ def show_molecule_py3dmol(
 
     Args:
         mol: The molecule to visualize.
-        width: The width of the visualization (e.g., "300px").
+        width: The width of the visualization (e.g., "500px").
         height: The height of the visualization (e.g., "300px").
         frame: Optional frame index to show. When omitted, multi-frame molecules
             are loaded as an interactive trajectory.
@@ -511,6 +564,7 @@ def show_molecule_py3dmol(
         _add_state_property_plots(
             view,
             records=mol.excited_state_records,
+            metadata=mol.metadata,
             n_frames=n_frames,
             frame=frame,
             height=height,
@@ -526,6 +580,7 @@ def show_molecule_py3dmol(
         _add_state_property_plots(
             view,
             records=mol.excited_state_records,
+            metadata=mol.metadata,
             n_frames=_frame_count(atom_records),
             frame=frame_index,
             height=height,

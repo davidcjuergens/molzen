@@ -260,6 +260,145 @@ def test_slice_frames_remaps_excited_state_record_frame_indices():
     ]
 
 
+def test_cat_frames_concatenates_coordinates_comments_and_excited_states():
+    mol_a = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                [[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["C", "O"],
+        comments=["a0", "a1"],
+        spinmult=1,
+        metadata={"job": "a"},
+        excited_state_records=[
+            {"frame_index": 0, "state_j": 0, "total_energy_au": -1.0},
+            {"frame_index": 1, "state_j": 0, "total_energy_au": -2.0},
+        ],
+    )
+    mol_b = Molecule(
+        xyz=np.array([[2.0, 0.0, 0.0], [2.0, 0.0, 1.0]], dtype=float),
+        elements=["C", "O"],
+        comments=["b0"],
+        spinmult=1,
+        metadata={"job": "b"},
+        excited_state_records=[
+            {"frame_index": 0, "state_j": 0, "total_energy_au": -3.0},
+            {"state_j": 1, "total_energy_au": -2.5},
+        ],
+    )
+    mol_b.comments = None
+
+    combined = Molecule.cat_frames([mol_a, mol_b])
+
+    assert combined.xyz.shape == (3, 2, 3)
+    np.testing.assert_allclose(
+        combined.xyz,
+        np.array(
+            [
+                [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                [[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
+                [[2.0, 0.0, 0.0], [2.0, 0.0, 1.0]],
+            ],
+            dtype=float,
+        ),
+    )
+    assert combined.comments == ["a0", "a1", ""]
+    assert combined.spinmult == 1
+    assert combined.excited_state_records == [
+        {"frame_index": 0, "state_j": 0, "total_energy_au": -1.0},
+        {"frame_index": 1, "state_j": 0, "total_energy_au": -2.0},
+        {"frame_index": 2, "state_j": 0, "total_energy_au": -3.0},
+    ]
+    assert combined.metadata["cat_frames"]["segments"] == [
+        {
+            "molecule_index": 0,
+            "frame_start": 0,
+            "frame_stop": 2,
+            "metadata": {"job": "a"},
+        },
+        {
+            "molecule_index": 1,
+            "frame_start": 2,
+            "frame_stop": 3,
+            "metadata": {"job": "b"},
+        },
+    ]
+    assert combined.metadata["cat_frames"]["frame_boundaries"] == [2]
+
+
+def test_cat_frames_accepts_three_or_more_molecules():
+    mols = [
+        Molecule(
+            xyz=np.array([[float(i), 0.0, 0.0]], dtype=float),
+            elements=["H"],
+        )
+        for i in range(3)
+    ]
+
+    combined = Molecule.cat_frames(mols)
+
+    assert combined.xyz.shape == (3, 1, 3)
+    np.testing.assert_allclose(
+        combined.xyz[:, 0, 0],
+        np.array([0.0, 1.0, 2.0], dtype=float),
+    )
+
+
+def test_slice_frames_remaps_cat_frame_boundaries():
+    mols = [
+        Molecule(
+            xyz=np.array(
+                [
+                    [[float(i), 0.0, 0.0]],
+                    [[float(i) + 0.5, 0.0, 0.0]],
+                ],
+                dtype=float,
+            ),
+            elements=["H"],
+        )
+        for i in (0, 1)
+    ]
+    combined = Molecule.cat_frames(mols)
+
+    sliced = combined.slice_frames(1, 4)
+
+    assert combined.metadata["cat_frames"]["frame_boundaries"] == [2]
+    assert sliced.metadata["cat_frames"]["frame_boundaries"] == [1]
+
+
+def test_cat_frames_rejects_mismatched_atom_metadata():
+    mol_a = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        elements=["C"],
+    )
+    mol_b = Molecule(
+        xyz=np.array([[1.0, 0.0, 0.0]], dtype=float),
+        elements=["O"],
+    )
+
+    with pytest.raises(ValueError, match="field 'element' differs"):
+        Molecule.cat_frames([mol_a, mol_b])
+
+
+def test_cat_frames_rejects_conflicting_spinmults():
+    mol_a = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        elements=["H"],
+        spinmult=1,
+    )
+    mol_b = Molecule(
+        xyz=np.array([[1.0, 0.0, 0.0]], dtype=float),
+        elements=["H"],
+        spinmult=3,
+    )
+
+    with pytest.raises(ValueError, match="different spinmults"):
+        Molecule.cat_frames([mol_a, mol_b])
+
+
 def test_terachem_records_with_frame_indices_maps_section_idx():
     records = [
         {"section_idx": 0, "state_j": 0, "total_energy_au": -1.0},
