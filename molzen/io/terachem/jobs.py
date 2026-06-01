@@ -75,8 +75,9 @@ def restart_terachem_optimization_from_latest(
             args.update(kwarg_updates)
 
     # extract key items that must be removed or passed back in
+    # pop(..., None) because we may not have constraints and make_terachem_input can deal with None constraints
     job_constraint_lists = [
-        job_args[i].pop("constraints") for i in range(len(job_args))
+        job_args[i].pop("constraints", None) for i in range(len(job_args))
     ]
     old_scrdirs = [k.pop("scrdir") for k in job_args]
     # pop old coordinates
