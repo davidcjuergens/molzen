@@ -141,7 +141,9 @@ def parse_terachem_output(
             else:
                 # possible this occurs if we are missing kwarg aliases for "minimize", e.g., "optimize"
                 # if so, update
-                print(f"WARNING: Found '{MINIMIZE_CONVERGED_HEADER}' in output but did not detect minimization in job.")
+                print(
+                    f"WARNING: Found '{MINIMIZE_CONVERGED_HEADER}' in output but did not detect minimization in job."
+                )
                 print("Setting minimization_converged to True anyways.")
                 out["minimization_converged"] = True
 
