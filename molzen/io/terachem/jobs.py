@@ -63,8 +63,7 @@ def get_latest_structure(
             assert not os.path.exists(new_xyz_path), (
                 f".xyz file {new_xyz_path} already exists."
             )
-        else:
-            print(f"Clobbering existing .xyz at {new_xyz_path}")
+
         final_frame.to_xyz(new_xyz_path)
         return new_xyz_path
 
