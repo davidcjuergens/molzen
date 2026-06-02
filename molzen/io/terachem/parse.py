@@ -141,9 +141,9 @@ def parse_terachem_output(
             else:
                 # possible this occurs if we are missing kwarg aliases for "minimize", e.g., "optimize"
                 # if so, update
-                raise RuntimeError(
-                    "Minimization convergence status found but did not detect minimization!"
-                )
+                print(f"WARNING: Found '{MINIMIZE_CONVERGED_HEADER}' in output but did not detect minimization in job.")
+                print("Setting minimization_converged to True anyways.")
+                out["minimization_converged"] = True
 
         #### Excited State Results ###
         if EXCITED_STATES_RESULTS_HEADER in line:

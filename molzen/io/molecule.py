@@ -1186,11 +1186,26 @@ class Molecule(Mapping[str, Any]):
             sliced_records.append(new_record)
         return sliced_records
 
-    def __getitem__(self, key: str | slice) -> Any:
-        """Get a molecule property by key OR return a Molecule() with data at selected frames if key is a slice."""
-        # Treat slice syntax as frame selection before mapping-style access.
+    def __getitem__(self, key: str | int | slice) -> Any:
+        """Get a molecule property by key OR return a Molecule() with selected frames."""
+        # Treat slice and integer syntax as frame selection before mapping-style access.
         if isinstance(key, slice):
             return self.slice_frames(key)
+
+        # single frame selection with integer index
+        if isinstance(key, (int, np.integer)) and not isinstance(key, bool):
+            if self._atom_records is None:
+                raise ValueError("No atom_records available to slice.")
+            frame_index = int(key)
+            n_frames = self._frame_count(self._atom_records)
+            # get the positive frame index equivalent to the negative index
+            if frame_index < 0:
+                frame_index += n_frames
+            if frame_index < 0 or frame_index >= n_frames:
+                raise IndexError(
+                    f"Frame index {key} out of range for {n_frames} frame(s)."
+                )
+            return self.slice_frames(frame_index, frame_index + 1)
 
         # Keep string-key lookups compatible with the Mapping interface.
         if key == "metadata":
