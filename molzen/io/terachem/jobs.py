@@ -46,11 +46,11 @@ def get_latest_structure(
         try:
             mol = mzio.Molecule.from_xyz(maybe_xyz)
             final_frame = mol[-1]
-            
+
         except CoordinatesNotFoundError:
-        # Sometimes, terachem produces optim.xyz without any data.
-        # In this case, if user passed in empty_optim_xyz_ok=True, 
-        # point to the original input geometry instead of raising.
+            # Sometimes, terachem produces optim.xyz without any data.
+            # In this case, if user passed in empty_optim_xyz_ok=True,
+            # point to the original input geometry instead of raising.
             if empty_optim_xyz_ok and old_input_crds is not None:
                 return old_input_crds
             else:

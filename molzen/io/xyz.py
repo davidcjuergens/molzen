@@ -6,11 +6,14 @@ from typing import Any
 
 import numpy as np
 
+
 class XYZParseError(ValueError):
     """Raise when .xyz parsing fails."""
 
+
 class CoordinatesNotFoundError(XYZParseError):
     """Raise when .xyz parsing fails to find coordinates."""
+
 
 def parse_xyz(xyz_fp: str) -> dict[str, Any]:
     """Parse a `.xyz` file with one or more frames."""
@@ -76,7 +79,9 @@ def parse_xyz(xyz_fp: str) -> dict[str, Any]:
         xyzs.append(frame_xyz)
 
     if not xyzs:
-        raise CoordinatesNotFoundError(f"No coordinate frames found in XYZ file: {xyz_fp}")
+        raise CoordinatesNotFoundError(
+            f"No coordinate frames found in XYZ file: {xyz_fp}"
+        )
 
     return {
         "xyz": np.array(xyzs, dtype=float),
