@@ -69,7 +69,11 @@ def get_latest_structure(
         return new_xyz_path
 
     else:
-        raise FileNotFoundError(f"No optim.rst7 or optim.xyz found in {scrdir}")
+        # didn't find anything to restart from!
+        if not empty_optim_xyz_ok or old_input_crds is None:
+            raise FileNotFoundError(f"No optim.rst7 or optim.xyz found in {scrdir}")
+        else:
+            return old_input_crds
 
 
 def restart_terachem_optimization_from_latest(
