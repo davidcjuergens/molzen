@@ -13,6 +13,7 @@ def get_latest_structure(
     xyz_storage_dir: str,
     empty_optim_xyz_ok: bool = False,
     old_input_crds: str | None = None,
+    clobber: bool = False,
 ) -> str:
     """Given a terachem scrdir, find the latest structure in the optimization.
     If optim.rst7 exists, simply point to that.
@@ -27,6 +28,7 @@ def get_latest_structure(
                             to the original input geometry to restart from instead of failing to parse the optim.xyz.
                             This is to handle when TeraChem produces an optim.xyz but it's empty.
         old_input_crds: path to the original input coordinates, used if optim.xyz is empty and empty_optim_xyz_ok is True
+        clobber: if true, will overwrite existing .xyz files in xyz_storage_dir if they exist
     """
 
     # create paths to files that may or may not exist
@@ -56,9 +58,13 @@ def get_latest_structure(
             else:
                 raise
         new_xyz_path = os.path.join(xyz_storage_dir, f"{scrdir_tag}.xyz")
-        assert not os.path.exists(new_xyz_path), (
-            f".xyz file {new_xyz_path} already exists."
-        )
+
+        if not clobber:
+            assert not os.path.exists(new_xyz_path), (
+                f".xyz file {new_xyz_path} already exists."
+            )
+        else:
+            print(f"Clobbering existing .xyz at {new_xyz_path}")
         final_frame.to_xyz(new_xyz_path)
         return new_xyz_path
 
@@ -118,6 +124,7 @@ def restart_terachem_optimization_from_latest(
             xyz_storage_dir,
             empty_optim_xyz_ok=empty_optim_xyz_ok,
             old_input_crds=old_crds,
+            clobber=clobber,
         )
         latest_geometries.append(latest)
 
