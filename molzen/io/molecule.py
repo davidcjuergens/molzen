@@ -1481,6 +1481,10 @@ class Molecule(Mapping[str, Any]):
         frame: int | None = None,
         start: int | None = None,
         end: int | None = None,
+        export_controls: bool = False,
+        gif_delay_ms: int = 120,
+        gif_total_time: float | None = None,
+        gif_bounce: bool = False,
     ) -> Any:
         """Return a py3Dmol view for the molecule.
 
@@ -1490,6 +1494,13 @@ class Molecule(Mapping[str, Any]):
             frame: Optional frame index to show from the displayed frame range.
             start: Optional first frame index to include.
             end: Optional frame index at which to stop, exclusive.
+            export_controls: Whether to add browser-side GIF export controls for
+                multi-frame views.
+            gif_delay_ms: Delay between exported GIF frames in milliseconds.
+            gif_total_time: Total exported GIF duration in seconds. When provided,
+                this overrides gif_delay_ms.
+            gif_bounce: Whether exported GIF frames should play forward and then
+                backward to the first frame.
         """
 
         # optional dependency, so lazy import
@@ -1498,7 +1509,16 @@ class Molecule(Mapping[str, Any]):
         mol = self if start is None and end is None else self.slice_frames(start, end)
         width_str = f"{width}px" if isinstance(width, int) else width
         height_str = f"{height}px" if isinstance(height, int) else height
-        return show_molecule(mol, width=width_str, height=height_str, frame=frame)
+        return show_molecule(
+            mol,
+            width=width_str,
+            height=height_str,
+            frame=frame,
+            export_controls=export_controls,
+            gif_delay_ms=gif_delay_ms,
+            gif_total_time=gif_total_time,
+            gif_bounce=gif_bounce,
+        )
 
     @classmethod
     def from_xyz(cls, file_path: str) -> Molecule:

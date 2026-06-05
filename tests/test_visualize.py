@@ -15,6 +15,9 @@ from molzen.constants import HARTREE2EV
 from molzen.visualize import (
     _excited_state_energy_series,
     _excited_state_oscillator_strength_series,
+    _fixed_y_ticks,
+    _gif_total_time_delays_ms,
+    _integer_y_ticks,
 )
 
 
@@ -150,6 +153,157 @@ def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
     assert view.zoomed
 
 
+def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+                [[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["C", "O"],
+        excited_state_records=[
+            {"frame_index": 0, "state_j": 0, "total_energy_au": -10.0},
+            {"frame_index": 1, "state_j": 0, "total_energy_au": -9.0},
+        ],
+    )
+
+    view = mol.show(export_controls=True, gif_delay_ms=75, gif_bounce=True)
+
+    assert "molzen_gif_export_controls_UNIQUEID" in view.startjs
+    assert "molzen_png_export_button_UNIQUEID" in view.startjs
+    assert "molzen_gif_export_button_UNIQUEID" in view.startjs
+    assert "Export PNG" in view.startjs
+    assert "Export GIF" in view.startjs
+    assert "gif.js@0.2.0/dist/gif.min.js" in view.startjs
+    assert "gif.js@0.2.0/dist/gif.worker.js" in view.startjs
+    assert "var gifAmdFactory = null" in view.startjs
+    assert "var previousDefine = window.define" in view.startjs
+    assert "window.define = function(dependencies, factory)" in view.startjs
+    assert "window.define = undefined" in view.startjs
+    assert "restoreModuleLoaderGlobals()" in view.startjs
+    assert "module.exports" in view.startjs
+    assert "window.URL.createObjectURL" in view.startjs
+    assert "new window.Blob" in view.startjs
+    assert "new window.GIF" in view.startjs
+    assert "buildExportFrameSequence()" in view.startjs
+    assert "if(true && 2 > 1)" in view.startjs
+    assert "String(frameSequence.length)" in view.startjs
+    assert "var frameDelaysMs = []" in view.startjs
+    assert "? frameDelaysMs[i] : 75" in view.startjs
+    assert "delay: frameDelay" in view.startjs
+    assert "pngExportButton.addEventListener" in view.startjs
+    assert "setFrame(currentFrame())" in view.startjs
+    assert "downloadCanvasPng(canvas, \"molzen.png\")" in view.startjs
+    assert "canvas.toBlob" in view.startjs
+    assert '"image/png"' in view.startjs
+    assert "capturePlotPanel(\"energy\")" in view.startjs
+    assert "capturePlotPanel(\"oscillator\")" in view.startjs
+    assert "drawPanelLabels(context, panelElement, panelRect)" in view.startjs
+    assert "molzen_show_row_UNIQUEID" in view.startjs
+    assert "font-size: 13px; line-height: 1.3" in view.startjs
+    assert "getBoundingClientRect" in view.startjs
+    assert "viewer_UNIQUEID.pngURI()" in view.startjs
+    assert "viewer_UNIQUEID.setFrame(frame)" in view.startjs
+    assert "molzenUpdateEnergyFrame_UNIQUEID(frame)" in view.startjs
+    assert "molzen_energy_panel_UNIQUEID" in view.startjs
+    assert "molzen_energy_svg_UNIQUEID" in view.startjs
+    assert "downloadBlob(blob, \"molzen.gif\")" in view.startjs
+
+
+def test_show_multiframe_molecule_rejects_invalid_gif_delay(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]], dtype=float),
+        elements=["H"],
+    )
+
+    with pytest.raises(ValueError, match="gif_delay_ms"):
+        mol.show(export_controls=True, gif_delay_ms=0)
+
+
+def test_gif_total_time_delays_distribute_centisecond_rounding() -> None:
+    assert _gif_total_time_delays_ms(
+        3,
+        bounce=False,
+        total_time=4.0,
+    ) == [1330, 1340, 1330]
+    assert _gif_total_time_delays_ms(
+        4,
+        bounce=True,
+        total_time=4.0,
+    ) == [570, 570, 570, 580, 570, 570, 570]
+
+
+def test_integer_y_ticks_are_whole_numbers_inside_visible_range() -> None:
+    assert _integer_y_ticks(-0.3, 8.7) == [0, 3, 6]
+    assert _integer_y_ticks(-0.5, 4.5) == [0, 2, 4]
+    assert _integer_y_ticks(-2.7, 6.5) == [0, 3, 6]
+
+
+def test_fixed_y_ticks_use_requested_increment_inside_visible_range() -> None:
+    assert _fixed_y_ticks(-0.1, 0.4, 0.25) == [0.0, 0.25]
+    assert _fixed_y_ticks(-0.2, 2.2, 0.25) == [
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.25,
+        1.5,
+        1.75,
+        2.0,
+    ]
+
+
+def test_show_multiframe_molecule_can_set_gif_total_time(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0]],
+                [[1.0, 0.0, 0.0]],
+                [[2.0, 0.0, 0.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["H"],
+    )
+
+    view = mol.show(
+        export_controls=True,
+        gif_delay_ms=1,
+        gif_total_time=4.0,
+        gif_bounce=False,
+    )
+
+    assert "if(false && 3 > 1)" in view.startjs
+    assert "var frameDelaysMs = [1330, 1340, 1330]" in view.startjs
+    assert "? frameDelaysMs[i] : 1330" in view.startjs
+    assert "delay: frameDelay" in view.startjs
+
+
+def test_show_multiframe_molecule_rejects_invalid_gif_total_time(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]], dtype=float),
+        elements=["H"],
+    )
+
+    with pytest.raises(ValueError, match="gif_total_time"):
+        mol.show(export_controls=True, gif_total_time=0)
+
+
 def test_show_can_limit_displayed_frame_range(monkeypatch) -> None:
     fake_py3dmol = FakePy3Dmol()
     monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
@@ -229,12 +383,23 @@ def test_show_multiframe_molecule_adds_excited_state_energy_plot(monkeypatch) ->
     assert "molzen_oscillator_panel_UNIQUEID" in view.startjs
     assert "molzen_show_outer_UNIQUEID" in view.startjs
     assert "display: inline-flex" in view.startjs
-    assert "State energies rel. S0 frame 1 (eV)" in view.startjs
-    assert "S0 -&gt; Sn oscillator strengths" in view.startjs
+    assert "Adiabatic state energies (eV)" in view.startjs
+    assert "Oscillator strength" in view.startjs
     assert "S0-&gt;S1" in view.startjs
     assert "molzen_plot_cursor_UNIQUEID" in view.startjs
     assert "window.molzenUpdateEnergyFrame_UNIQUEID" in view.startjs
     assert "molzenUpdateEnergyFrame_UNIQUEID(frame)" in view.startjs
+    assert ">-14</text>" in view.startjs
+    assert ">0</text>" in view.startjs
+    assert ">14</text>" in view.startjs
+    assert ">0.25</text>" in view.startjs
+    assert ">-28</text>" not in view.startjs
+    assert ">28</text>" not in view.startjs
+    assert 'x="40" y=' in view.startjs
+    assert 'text-anchor="end">-14</text>' in view.startjs
+    assert '<text x="195.00"' in view.startjs
+    assert '<text x="342.00"' in view.startjs
+    assert 'text-anchor="middle">Frame</text>' in view.startjs
     assert 'height="300"' in view.startjs
     assert "S0" in view.startjs
     assert "S1" in view.startjs
