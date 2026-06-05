@@ -1485,6 +1485,7 @@ class Molecule(Mapping[str, Any]):
         gif_delay_ms: int = 120,
         gif_total_time: float | None = None,
         gif_bounce: bool = False,
+        png_scale: float = 2.0,
     ) -> Any:
         """Return a py3Dmol view for the molecule.
 
@@ -1501,6 +1502,8 @@ class Molecule(Mapping[str, Any]):
                 this overrides gif_delay_ms.
             gif_bounce: Whether exported GIF frames should play forward and then
                 backward to the first frame.
+            png_scale: Pixel scale for PNG and clipboard exports. A value of 2.0
+                exports twice the notebook display dimensions.
         """
 
         # optional dependency, so lazy import
@@ -1518,6 +1521,7 @@ class Molecule(Mapping[str, Any]):
             gif_delay_ms=gif_delay_ms,
             gif_total_time=gif_total_time,
             gif_bounce=gif_bounce,
+            png_scale=png_scale,
         )
 
     @classmethod

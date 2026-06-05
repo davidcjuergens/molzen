@@ -175,14 +175,19 @@ def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> No
     view = mol.show(export_controls=True, gif_delay_ms=75, gif_bounce=True)
 
     assert "molzen_gif_export_controls_UNIQUEID" in view.startjs
+    assert "molzen_clipboard_copy_button_UNIQUEID" in view.startjs
     assert "molzen_png_export_button_UNIQUEID" in view.startjs
     assert "molzen_gif_export_button_UNIQUEID" in view.startjs
+    assert "Copy to clipboard" in view.startjs
     assert "Export PNG" in view.startjs
     assert "Export GIF" in view.startjs
+    assert "white-space: nowrap; flex: 0 0 auto" in view.startjs
+    assert "flex: 0 0 190px; white-space: nowrap" in view.startjs
     assert "gif.js@0.2.0/dist/gif.min.js" in view.startjs
     assert "gif.js@0.2.0/dist/gif.worker.js" in view.startjs
     assert "var gifAmdFactory = null" in view.startjs
     assert "var previousDefine = window.define" in view.startjs
+    assert "var pngScale = 2.0" in view.startjs
     assert "window.define = function(dependencies, factory)" in view.startjs
     assert "window.define = undefined" in view.startjs
     assert "restoreModuleLoaderGlobals()" in view.startjs
@@ -196,16 +201,26 @@ def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> No
     assert "var frameDelaysMs = []" in view.startjs
     assert "? frameDelaysMs[i] : 75" in view.startjs
     assert "delay: frameDelay" in view.startjs
+    assert "copyClipboardButton.addEventListener" in view.startjs
+    assert "copyCanvasPngToClipboard(canvas)" in view.startjs
+    assert "captureFrame(pngScale)" in view.startjs
+    assert "function normalizedScale(scale)" in view.startjs
+    assert "context.scale(scale, scale)" in view.startjs
+    assert "navigator.clipboard.write([item])" in view.startjs
+    assert "new window.ClipboardItem" in view.startjs
+    assert "Clipboard image copy is not available in this browser." in view.startjs
+    assert "Copied PNG to clipboard." in view.startjs
     assert "pngExportButton.addEventListener" in view.startjs
     assert "setFrame(currentFrame())" in view.startjs
+    assert "canvasToPngBlob(canvas)" in view.startjs
     assert "downloadCanvasPng(canvas, \"molzen.png\")" in view.startjs
     assert "canvas.toBlob" in view.startjs
     assert '"image/png"' in view.startjs
-    assert "capturePlotPanel(\"energy\")" in view.startjs
-    assert "capturePlotPanel(\"oscillator\")" in view.startjs
+    assert "capturePlotPanel(\"energy\", scale)" in view.startjs
+    assert "capturePlotPanel(\"oscillator\", scale)" in view.startjs
     assert "drawPanelLabels(context, panelElement, panelRect)" in view.startjs
     assert "molzen_show_row_UNIQUEID" in view.startjs
-    assert "font-size: 13px; line-height: 1.3" in view.startjs
+    assert "margin-left: 48px; width: 294px; font-size: 14px" in view.startjs
     assert "getBoundingClientRect" in view.startjs
     assert "viewer_UNIQUEID.pngURI()" in view.startjs
     assert "viewer_UNIQUEID.setFrame(frame)" in view.startjs
@@ -226,6 +241,19 @@ def test_show_multiframe_molecule_rejects_invalid_gif_delay(monkeypatch) -> None
 
     with pytest.raises(ValueError, match="gif_delay_ms"):
         mol.show(export_controls=True, gif_delay_ms=0)
+
+
+def test_show_multiframe_molecule_rejects_invalid_png_scale(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]], dtype=float),
+        elements=["H"],
+    )
+
+    with pytest.raises(ValueError, match="png_scale"):
+        mol.show(export_controls=True, png_scale=0)
 
 
 def test_gif_total_time_delays_distribute_centisecond_rounding() -> None:
@@ -383,7 +411,13 @@ def test_show_multiframe_molecule_adds_excited_state_energy_plot(monkeypatch) ->
     assert "molzen_oscillator_panel_UNIQUEID" in view.startjs
     assert "molzen_show_outer_UNIQUEID" in view.startjs
     assert "display: inline-flex" in view.startjs
+    assert "font: 12px Arial, Helvetica, sans-serif" in view.startjs
+    assert "font-family: Arial, Helvetica, sans-serif; font-size: 12px" in view.startjs
     assert "Adiabatic state energies (eV)" in view.startjs
+    assert "Energy (eV)" in view.startjs
+    assert 'transform="translate(18.00 ' in view.startjs
+    assert 'rotate(-90)" fill="#555" text-anchor="middle"' in view.startjs
+    assert "margin-left: 48px; width: 294px; font-size: 14px" in view.startjs
     assert "Oscillator strength" in view.startjs
     assert "S0-&gt;S1" in view.startjs
     assert "molzen_plot_cursor_UNIQUEID" in view.startjs
@@ -399,7 +433,7 @@ def test_show_multiframe_molecule_adds_excited_state_energy_plot(monkeypatch) ->
     assert 'text-anchor="end">-14</text>' in view.startjs
     assert '<text x="195.00"' in view.startjs
     assert '<text x="342.00"' in view.startjs
-    assert 'text-anchor="middle">Frame</text>' in view.startjs
+    assert 'y="295" fill="#555" text-anchor="middle">Frame</text>' in view.startjs
     assert 'height="300"' in view.startjs
     assert "S0" in view.startjs
     assert "S1" in view.startjs

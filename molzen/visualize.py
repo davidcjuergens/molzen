@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from molzen.io.molecule import Molecule
 
 
+_PLOT_FONT_FAMILY = "Arial, Helvetica, sans-serif"
+
+
 def _frame_count(atom_records: np.ndarray) -> int:
     """Return the number of coordinate frames in atom_records."""
     return atom_records.dtype["coords"].shape[0]
@@ -389,6 +392,7 @@ def _add_py3dmol_gif_export_controls(
     delay_ms: int = 120,
     bounce: bool = False,
     total_time: float | None = None,
+    png_scale: float = 2.0,
     filename: str = "molzen.gif",
     png_filename: str = "molzen.png",
 ) -> None:
@@ -406,24 +410,31 @@ def _add_py3dmol_gif_export_controls(
             raise ValueError("gif_delay_ms must be a positive integer.")
         frame_delays_ms = []
 
+    png_scale = float(png_scale)
+    if not np.isfinite(png_scale) or png_scale <= 0:
+        raise ValueError("png_scale must be a positive number.")
+
     width_css = f"{width}px" if isinstance(width, int) else width
     bounce_json = json.dumps(bool(bounce))
     frame_delays_ms_json = json.dumps(frame_delays_ms)
+    png_scale_json = json.dumps(png_scale)
     filename_json = json.dumps(filename)
     png_filename_json = json.dumps(png_filename)
     controls_html = f"""
-<div id="molzen_gif_export_controls_UNIQUEID" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: {width_css}; margin: 6px auto 0 auto; font: 12px sans-serif;">
-  <button id="molzen_png_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer;">Export PNG</button>
-  <button id="molzen_gif_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer;">Export GIF</button>
-  <span id="molzen_gif_export_status_UNIQUEID" style="color: #555;"></span>
+<div id="molzen_gif_export_controls_UNIQUEID" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: {width_css}; min-width: max-content; margin: 6px auto 0 auto; font: 12px {_PLOT_FONT_FAMILY};">
+  <button id="molzen_clipboard_copy_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Copy to clipboard</button>
+  <button id="molzen_png_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Export PNG</button>
+  <button id="molzen_gif_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Export GIF</button>
+  <span id="molzen_gif_export_status_UNIQUEID" style="color: #555; display: inline-block; flex: 0 0 190px; white-space: nowrap; text-align: left;"></span>
 </div>
 """
     script = f"""
 (function() {{
+    var copyClipboardButton = document.getElementById("molzen_clipboard_copy_button_UNIQUEID");
     var pngExportButton = document.getElementById("molzen_png_export_button_UNIQUEID");
     var exportButton = document.getElementById("molzen_gif_export_button_UNIQUEID");
     var exportStatus = document.getElementById("molzen_gif_export_status_UNIQUEID");
-    if(!pngExportButton || !exportButton || !exportStatus) {{
+    if(!copyClipboardButton || !pngExportButton || !exportButton || !exportStatus) {{
         return;
     }}
 
@@ -431,11 +442,13 @@ def _add_py3dmol_gif_export_controls(
     var gifWorkerScriptUrlPromise = null;
     var gifWorkerScriptUrl = "https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js";
     var frameDelaysMs = {frame_delays_ms_json};
+    var pngScale = {png_scale_json};
     function setStatus(message) {{
         exportStatus.textContent = message;
     }}
 
     function setExportButtonsDisabled(disabled) {{
+        copyClipboardButton.disabled = disabled;
         pngExportButton.disabled = disabled;
         exportButton.disabled = disabled;
     }}
@@ -621,10 +634,19 @@ def _add_py3dmol_gif_export_controls(
         return rect;
     }}
 
-    function makeCanvas(width, height) {{
+    function normalizedScale(scale) {{
+        scale = Number(scale);
+        if(!Number.isFinite(scale) || scale <= 0) {{
+            return 1;
+        }}
+        return scale;
+    }}
+
+    function makeCanvas(width, height, scale) {{
+        scale = normalizedScale(scale);
         var canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.ceil(width));
-        canvas.height = Math.max(1, Math.ceil(height));
+        canvas.width = Math.max(1, Math.ceil(width * scale));
+        canvas.height = Math.max(1, Math.ceil(height * scale));
         return canvas;
     }}
 
@@ -645,7 +667,9 @@ def _add_py3dmol_gif_export_controls(
             var style = window.getComputedStyle
                 ? window.getComputedStyle(label)
                 : null;
-            context.font = style && style.font ? style.font : "12px sans-serif";
+            context.font = style && style.font
+                ? style.font
+                : "12px Arial, Helvetica, sans-serif";
             context.fillStyle = style && style.color ? style.color : "#222";
             context.textBaseline = "top";
             context.fillText(
@@ -656,13 +680,14 @@ def _add_py3dmol_gif_export_controls(
         }}
     }}
 
-    function captureMoleculePanel() {{
+    function captureMoleculePanel(scale) {{
+        scale = normalizedScale(scale);
         var viewerElement = document.getElementById("3dmolviewer_UNIQUEID");
         var viewerRect = renderedRect(viewerElement);
         return loadImage(viewer_UNIQUEID.pngURI()).then(function(image) {{
             var width = viewerRect ? viewerRect.width : image.width;
             var height = viewerRect ? viewerRect.height : image.height;
-            var canvas = makeCanvas(width, height);
+            var canvas = makeCanvas(width, height, scale);
             var context = canvas.getContext("2d");
             fillWhite(context, canvas);
             context.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -671,16 +696,17 @@ def _add_py3dmol_gif_export_controls(
                 rect: viewerRect || {{
                     left: 0,
                     top: 0,
-                    right: canvas.width,
-                    bottom: canvas.height,
-                    width: canvas.width,
-                    height: canvas.height
+                    right: width,
+                    bottom: height,
+                    width: width,
+                    height: height
                 }}
             }};
         }});
     }}
 
-    function capturePlotPanel(panelId) {{
+    function capturePlotPanel(panelId, scale) {{
+        scale = normalizedScale(scale);
         var panelElement = document.getElementById(
             "molzen_" + panelId + "_panel_UNIQUEID"
         );
@@ -694,9 +720,11 @@ def _add_py3dmol_gif_export_controls(
         }}
 
         return svgImagePromise(svgElement).then(function(svgImage) {{
-            var canvas = makeCanvas(panelRect.width, panelRect.height);
+            var canvas = makeCanvas(panelRect.width, panelRect.height, scale);
             var context = canvas.getContext("2d");
             fillWhite(context, canvas);
+            context.save();
+            context.scale(scale, scale);
             context.drawImage(
                 svgImage,
                 svgRect.left - panelRect.left,
@@ -705,11 +733,13 @@ def _add_py3dmol_gif_export_controls(
                 svgRect.height
             );
             drawPanelLabels(context, panelElement, panelRect);
+            context.restore();
             return {{canvas: canvas, rect: panelRect}};
         }});
     }}
 
-    function composePositionedCaptures(captures, rowRect) {{
+    function composePositionedCaptures(captures, rowRect, scale) {{
+        scale = normalizedScale(scale);
         var minLeft = rowRect.left;
         var minTop = rowRect.top;
         var maxRight = rowRect.right;
@@ -721,20 +751,26 @@ def _add_py3dmol_gif_export_controls(
             maxBottom = Math.max(maxBottom, captures[i].rect.bottom);
         }}
 
-        var canvas = makeCanvas(maxRight - minLeft, maxBottom - minTop);
+        var canvas = makeCanvas(maxRight - minLeft, maxBottom - minTop, scale);
         var context = canvas.getContext("2d");
         fillWhite(context, canvas);
+        context.save();
+        context.scale(scale, scale);
         for(var j = 0; j < captures.length; j++) {{
             context.drawImage(
                 captures[j].canvas,
                 captures[j].rect.left - minLeft,
-                captures[j].rect.top - minTop
+                captures[j].rect.top - minTop,
+                captures[j].rect.width,
+                captures[j].rect.height
             );
         }}
+        context.restore();
         return canvas;
     }}
 
-    function composeFallbackCaptures(captures) {{
+    function composeFallbackCaptures(captures, scale) {{
+        scale = normalizedScale(scale);
         if(captures.length === 1) {{
             return captures[0].canvas;
         }}
@@ -743,25 +779,35 @@ def _add_py3dmol_gif_export_controls(
         var canvasWidth = 0;
         var canvasHeight = 0;
         for(var i = 0; i < captures.length; i++) {{
-            canvasWidth += captures[i].canvas.width;
+            canvasWidth += captures[i].rect.width;
             if(i > 0) {{
                 canvasWidth += gap;
             }}
-            canvasHeight = Math.max(canvasHeight, captures[i].canvas.height);
+            canvasHeight = Math.max(canvasHeight, captures[i].rect.height);
         }}
 
-        var canvas = makeCanvas(canvasWidth, canvasHeight);
+        var canvas = makeCanvas(canvasWidth, canvasHeight, scale);
         var context = canvas.getContext("2d");
         fillWhite(context, canvas);
+        context.save();
+        context.scale(scale, scale);
         var x = 0;
         for(var j = 0; j < captures.length; j++) {{
-            context.drawImage(captures[j].canvas, x, 0);
-            x += captures[j].canvas.width + gap;
+            context.drawImage(
+                captures[j].canvas,
+                x,
+                0,
+                captures[j].rect.width,
+                captures[j].rect.height
+            );
+            x += captures[j].rect.width + gap;
         }}
+        context.restore();
         return canvas;
     }}
 
-    function composeFrameCaptures(captures) {{
+    function composeFrameCaptures(captures, scale) {{
+        scale = normalizedScale(scale);
         captures = captures.filter(function(capture) {{
             return capture !== null;
         }});
@@ -773,17 +819,20 @@ def _add_py3dmol_gif_export_controls(
             document.getElementById("molzen_show_row_UNIQUEID")
         );
         if(rowRect) {{
-            return composePositionedCaptures(captures, rowRect);
+            return composePositionedCaptures(captures, rowRect, scale);
         }}
-        return composeFallbackCaptures(captures);
+        return composeFallbackCaptures(captures, scale);
     }}
 
-    function captureFrame() {{
+    function captureFrame(scale) {{
+        scale = normalizedScale(scale);
         return Promise.all([
-            captureMoleculePanel(),
-            capturePlotPanel("energy"),
-            capturePlotPanel("oscillator")
-        ]).then(composeFrameCaptures);
+            captureMoleculePanel(scale),
+            capturePlotPanel("energy", scale),
+            capturePlotPanel("oscillator", scale)
+        ]).then(function(captures) {{
+            return composeFrameCaptures(captures, scale);
+        }});
     }}
 
     function buildExportFrameSequence() {{
@@ -846,7 +895,20 @@ def _add_py3dmol_gif_export_controls(
         }}, 0);
     }}
 
-    function downloadCanvasPng(canvas, filename) {{
+    function dataUrlToBlob(dataUrl) {{
+        var parts = dataUrl.split(",");
+        var metadata = parts[0] || "";
+        var match = metadata.match(/data:([^;]+);base64/);
+        var mimeType = match ? match[1] : "image/png";
+        var binary = window.atob(parts[1]);
+        var bytes = new Uint8Array(binary.length);
+        for(var i = 0; i < binary.length; i++) {{
+            bytes[i] = binary.charCodeAt(i);
+        }}
+        return new window.Blob([bytes], {{type: mimeType}});
+    }}
+
+    function canvasToPngBlob(canvas) {{
         return new Promise(function(resolve, reject) {{
             if(typeof canvas.toBlob === "function") {{
                 canvas.toBlob(function(blob) {{
@@ -854,28 +916,64 @@ def _add_py3dmol_gif_export_controls(
                         reject(new Error("Could not create PNG."));
                         return;
                     }}
-                    downloadBlob(blob, filename);
-                    resolve();
+                    resolve(blob);
                 }}, "image/png");
                 return;
             }}
 
-            var link = document.createElement("a");
-            link.href = canvas.toDataURL("image/png");
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            setTimeout(function() {{
-                document.body.removeChild(link);
-            }}, 0);
-            resolve();
+            try {{
+                resolve(dataUrlToBlob(canvas.toDataURL("image/png")));
+            }} catch(error) {{
+                reject(error);
+            }}
         }});
     }}
+
+    function downloadCanvasPng(canvas, filename) {{
+        return canvasToPngBlob(canvas).then(function(blob) {{
+            downloadBlob(blob, filename);
+        }});
+    }}
+
+    function copyCanvasPngToClipboard(canvas) {{
+        if(
+            !navigator.clipboard ||
+            typeof navigator.clipboard.write !== "function" ||
+            typeof window.ClipboardItem !== "function"
+        ) {{
+            return Promise.reject(
+                new Error("Clipboard image copy is not available in this browser.")
+            );
+        }}
+
+        return canvasToPngBlob(canvas).then(function(blob) {{
+            var item = new window.ClipboardItem({{"image/png": blob}});
+            return navigator.clipboard.write([item]);
+        }});
+    }}
+
+    copyClipboardButton.addEventListener("click", function() {{
+        setExportButtonsDisabled(true);
+        setStatus("Copying PNG...");
+        setFrame(currentFrame()).then(function() {{
+            return captureFrame(pngScale);
+        }}).then(function(canvas) {{
+            return copyCanvasPngToClipboard(canvas);
+        }}).then(function() {{
+            setStatus("Copied PNG to clipboard.");
+            setExportButtonsDisabled(false);
+        }}).catch(function(error) {{
+            setStatus(error && error.message ? error.message : "PNG copy failed.");
+            setExportButtonsDisabled(false);
+        }});
+    }});
 
     pngExportButton.addEventListener("click", function() {{
         setExportButtonsDisabled(true);
         setStatus("Capturing PNG...");
-        setFrame(currentFrame()).then(captureFrame).then(function(canvas) {{
+        setFrame(currentFrame()).then(function() {{
+            return captureFrame(pngScale);
+        }}).then(function(canvas) {{
             return downloadCanvasPng(canvas, {png_filename_json});
         }}).then(function() {{
             setStatus("Downloaded " + {png_filename_json});
@@ -960,6 +1058,7 @@ def _state_trace_plot_html(
     frame_boundaries: list[int] | None = None,
     y_padding: float = 0.5,
     y_tick_increment: float | None = None,
+    y_axis_label: str | None = None,
 ) -> str:
     """Return SVG HTML for one frame-indexed trace plot."""
     plot_width = 360
@@ -1072,21 +1171,30 @@ def _state_trace_plot_html(
     current_frame = 0 if frame is None else frame
     cursor_x = x_px(current_frame)
     escaped_title = html.escape(title)
+    y_label_part = ""
+    if y_axis_label:
+        y_label_part = (
+            f'<text transform="translate(18.00 '
+            f'{margin_top + inner_height / 2:.2f}) rotate(-90)" '
+            'fill="#555" text-anchor="middle" dominant-baseline="middle" '
+            f'font-size="12">{html.escape(y_axis_label)}</text>'
+        )
     return f"""
-<div id="molzen_{panel_id}_panel_UNIQUEID" style="width: {plot_width}px; font: 12px sans-serif;">
-  <svg id="molzen_{panel_id}_svg_UNIQUEID" width="{plot_width}" height="{plot_height}" viewBox="0 0 {plot_width} {plot_height}" role="img" aria-label="{escaped_title}">
+<div id="molzen_{panel_id}_panel_UNIQUEID" style="width: {plot_width}px; font: 12px {_PLOT_FONT_FAMILY};">
+  <svg id="molzen_{panel_id}_svg_UNIQUEID" width="{plot_width}" height="{plot_height}" viewBox="0 0 {plot_width} {plot_height}" role="img" aria-label="{escaped_title}" style="font-family: {_PLOT_FONT_FAMILY}; font-size: 12px;">
     <rect x="0" y="0" width="{plot_width}" height="{plot_height}" fill="white" />
+    {y_label_part}
     {"".join(tick_parts)}
     <line x1="{margin_left}" y1="{margin_top}" x2="{margin_left}" y2="{margin_top + inner_height}" stroke="#444" stroke-width="1" />
     <line x1="{margin_left}" y1="{margin_top + inner_height}" x2="{margin_left + inner_width}" y2="{margin_top + inner_height}" stroke="#444" stroke-width="1" />
     {"".join(x_tick_parts)}
     <text x="{plot_width / 2:.2f}" y="14" fill="#222" text-anchor="middle" font-size="14" font-weight="600">{escaped_title}</text>
-    <text x="{margin_left + inner_width / 2:.2f}" y="{plot_height - 8}" fill="#555" text-anchor="middle">Frame</text>
+    <text x="{margin_left + inner_width / 2:.2f}" y="{plot_height - 5}" fill="#555" text-anchor="middle">Frame</text>
     {"".join(boundary_parts)}
     {"".join(path_parts)}
     <line class="molzen_plot_cursor_UNIQUEID" x1="{cursor_x:.2f}" y1="{margin_top}" x2="{cursor_x:.2f}" y2="{margin_top + inner_height}" stroke="#111" stroke-width="1" opacity="0.8" />
   </svg>
-  <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; line-height: 1.3;">{"".join(label_parts)}</div>
+  <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-left: {margin_left}px; width: {inner_width}px; font-size: 14px; line-height: 1.3;">{"".join(label_parts)}</div>
 </div>
 """
 
@@ -1122,6 +1230,7 @@ def _add_state_property_plots(
             frame=frame,
             plot_height=plot_height,
             frame_boundaries=frame_boundaries,
+            y_axis_label="Energy (eV)",
         )
     if oscillator_series:
         graph_html += _state_trace_plot_html(
@@ -1226,6 +1335,7 @@ def show_molecule_py3dmol(
     gif_delay_ms: int = 120,
     gif_total_time: float | None = None,
     gif_bounce: bool = False,
+    png_scale: float = 2.0,
 ) -> Any:
     """Return a py3Dmol view for a molecule.
 
@@ -1245,6 +1355,8 @@ def show_molecule_py3dmol(
             this overrides gif_delay_ms.
         gif_bounce: Whether exported GIF frames should play forward and then
             backward to the first frame.
+        png_scale: Pixel scale for PNG and clipboard exports. A value of 2.0
+            exports twice the notebook display dimensions.
     """
     py3dmol = _require_py3dmol()
     atom_records = mol.atom_records
@@ -1276,6 +1388,7 @@ def show_molecule_py3dmol(
                 delay_ms=gif_delay_ms,
                 bounce=gif_bounce,
                 total_time=gif_total_time,
+                png_scale=png_scale,
             )
         if animate:
             view.animate({"loop": "forward"})
