@@ -421,20 +421,30 @@ def _add_py3dmol_gif_export_controls(
     filename_json = json.dumps(filename)
     png_filename_json = json.dumps(png_filename)
     controls_html = f"""
-<div id="molzen_gif_export_controls_UNIQUEID" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: {width_css}; min-width: max-content; margin: 6px auto 0 auto; font: 12px {_PLOT_FONT_FAMILY};">
-  <button id="molzen_clipboard_copy_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Copy to clipboard</button>
-  <button id="molzen_png_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Export PNG</button>
-  <button id="molzen_gif_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Export GIF</button>
-  <span id="molzen_gif_export_status_UNIQUEID" style="color: #555; display: inline-block; flex: 0 0 190px; white-space: nowrap; text-align: left;"></span>
+<div id="molzen_gif_export_controls_UNIQUEID" style="width: {width_css}; min-width: max-content; margin: 6px auto 0 auto; font: 12px {_PLOT_FONT_FAMILY}; text-align: center;">
+  <div id="molzen_export_button_group_UNIQUEID" style="position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+    <button id="molzen_clipboard_copy_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Copy PNG</button>
+    <button id="molzen_png_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Export PNG</button>
+    <button id="molzen_gif_clipboard_copy_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Copy GIF</button>
+    <button id="molzen_gif_export_button_UNIQUEID" type="button" style="font: inherit; padding: 4px 10px; cursor: pointer; white-space: nowrap; flex: 0 0 auto;">Export GIF</button>
+    <span id="molzen_gif_export_status_UNIQUEID" style="position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); color: #555; display: inline-block; width: 220px; white-space: nowrap; text-align: left;"></span>
+  </div>
 </div>
 """
     script = f"""
 (function() {{
     var copyClipboardButton = document.getElementById("molzen_clipboard_copy_button_UNIQUEID");
     var pngExportButton = document.getElementById("molzen_png_export_button_UNIQUEID");
+    var copyGifButton = document.getElementById("molzen_gif_clipboard_copy_button_UNIQUEID");
     var exportButton = document.getElementById("molzen_gif_export_button_UNIQUEID");
     var exportStatus = document.getElementById("molzen_gif_export_status_UNIQUEID");
-    if(!copyClipboardButton || !pngExportButton || !exportButton || !exportStatus) {{
+    if(
+        !copyClipboardButton ||
+        !pngExportButton ||
+        !copyGifButton ||
+        !exportButton ||
+        !exportStatus
+    ) {{
         return;
     }}
 
@@ -450,6 +460,7 @@ def _add_py3dmol_gif_export_controls(
     function setExportButtonsDisabled(disabled) {{
         copyClipboardButton.disabled = disabled;
         pngExportButton.disabled = disabled;
+        copyGifButton.disabled = disabled;
         exportButton.disabled = disabled;
     }}
 
@@ -935,21 +946,111 @@ def _add_py3dmol_gif_export_controls(
         }});
     }}
 
-    function copyCanvasPngToClipboard(canvas) {{
+    function copyBlobToClipboard(blob, mimeType, unavailableMessage) {{
         if(
             !navigator.clipboard ||
             typeof navigator.clipboard.write !== "function" ||
             typeof window.ClipboardItem !== "function"
         ) {{
-            return Promise.reject(
-                new Error("Clipboard image copy is not available in this browser.")
-            );
+            return Promise.reject(new Error(unavailableMessage));
+        }}
+        if(
+            typeof window.ClipboardItem.supports === "function" &&
+            !window.ClipboardItem.supports(mimeType)
+        ) {{
+            return Promise.reject(new Error(unavailableMessage));
         }}
 
+        var clipboardPayload = {{}};
+        clipboardPayload[mimeType] = blob;
+        var item = new window.ClipboardItem(clipboardPayload);
+        return navigator.clipboard.write([item]);
+    }}
+
+    function copyCanvasPngToClipboard(canvas) {{
         return canvasToPngBlob(canvas).then(function(blob) {{
-            var item = new window.ClipboardItem({{"image/png": blob}});
-            return navigator.clipboard.write([item]);
+            return copyBlobToClipboard(
+                blob,
+                "image/png",
+                "Clipboard image copy is not available in this browser."
+            );
         }});
+    }}
+
+    function copyGifBlobToClipboard(blob) {{
+        return copyBlobToClipboard(
+            blob,
+            "image/gif",
+            "Clipboard GIF copy is not available in this browser."
+        );
+    }}
+
+    function renderGifBlob() {{
+        return Promise.all([loadGifLibrary(), loadGifWorkerScriptUrl()]).then(
+            function(values) {{
+                var activeWorkerScriptUrl = values[1];
+                var captures = [];
+                var frameSequence = buildExportFrameSequence();
+                var sequenceIndex = 0;
+
+                function captureNextFrame() {{
+                    if(sequenceIndex >= frameSequence.length) {{
+                        return captures;
+                    }}
+                    var frame = frameSequence[sequenceIndex];
+                    setStatus(
+                        "Capturing frame " +
+                        String(sequenceIndex + 1) +
+                        "/" +
+                        String(frameSequence.length) +
+                        "..."
+                    );
+                    return setFrame(frame).then(function() {{
+                        return captureFrame();
+                    }}).then(function(canvas) {{
+                        captures.push(canvas);
+                        sequenceIndex += 1;
+                        return captureNextFrame();
+                    }});
+                }}
+
+                return captureNextFrame().then(function() {{
+                    return activeWorkerScriptUrl;
+                }}).then(function(workerScriptUrl) {{
+                    if(captures.length === 0) {{
+                        throw new Error("No frames were captured.");
+                    }}
+                    setStatus("Encoding GIF...");
+                    return new Promise(function(resolve, reject) {{
+                        var gif = new window.GIF({{
+                            workers: 2,
+                            quality: 10,
+                            width: captures[0].width,
+                            height: captures[0].height,
+                            workerScript: workerScriptUrl
+                        }});
+                        for(var i = 0; i < captures.length; i++) {{
+                            var frameDelay = i < frameDelaysMs.length
+                                ? frameDelaysMs[i]
+                                : {delay_ms};
+                            gif.addFrame(captures[i], {{
+                                copy: true,
+                                delay: frameDelay
+                            }});
+                        }}
+                        gif.on("finished", resolve);
+                        gif.on("abort", function() {{
+                            reject(new Error("GIF encoding was aborted."));
+                        }});
+                        try {{
+                            gif.render();
+                        }} catch(error) {{
+                            reject(error);
+                        }}
+                    }});
+                }});
+            }}
+        );
     }}
 
     copyClipboardButton.addEventListener("click", function() {{
@@ -984,58 +1085,28 @@ def _add_py3dmol_gif_export_controls(
         }});
     }});
 
+    copyGifButton.addEventListener("click", function() {{
+        setExportButtonsDisabled(true);
+        setStatus("Loading encoder...");
+        renderGifBlob().then(function(blob) {{
+            setStatus("Copying GIF...");
+            return copyGifBlobToClipboard(blob);
+        }}).then(function() {{
+            setStatus("Copied GIF to clipboard.");
+            setExportButtonsDisabled(false);
+        }}).catch(function(error) {{
+            setStatus(error && error.message ? error.message : "GIF copy failed.");
+            setExportButtonsDisabled(false);
+        }});
+    }});
+
     exportButton.addEventListener("click", function() {{
         setExportButtonsDisabled(true);
         setStatus("Loading encoder...");
-        var activeWorkerScriptUrl = gifWorkerScriptUrl;
-        Promise.all([loadGifLibrary(), loadGifWorkerScriptUrl()]).then(function(values) {{
-            activeWorkerScriptUrl = values[1];
-            var captures = [];
-            var frameSequence = buildExportFrameSequence();
-            var sequenceIndex = 0;
-
-            function captureNextFrame() {{
-                if(sequenceIndex >= frameSequence.length) {{
-                    return captures;
-                }}
-                var frame = frameSequence[sequenceIndex];
-                setStatus(
-                    "Capturing frame " +
-                    String(sequenceIndex + 1) +
-                    "/" +
-                    String(frameSequence.length) +
-                    "..."
-                );
-                return setFrame(frame).then(captureFrame).then(function(canvas) {{
-                    captures.push(canvas);
-                    sequenceIndex += 1;
-                    return captureNextFrame();
-                }});
-            }}
-
-            return captureNextFrame();
-        }}).then(function(captures) {{
-            if(captures.length === 0) {{
-                throw new Error("No frames were captured.");
-            }}
-            setStatus("Encoding GIF...");
-            var gif = new window.GIF({{
-                workers: 2,
-                quality: 10,
-                width: captures[0].width,
-                height: captures[0].height,
-                workerScript: activeWorkerScriptUrl
-            }});
-            for(var i = 0; i < captures.length; i++) {{
-                var frameDelay = i < frameDelaysMs.length ? frameDelaysMs[i] : {delay_ms};
-                gif.addFrame(captures[i], {{copy: true, delay: frameDelay}});
-            }}
-            gif.on("finished", function(blob) {{
-                downloadBlob(blob, {filename_json});
-                setStatus("Downloaded " + {filename_json});
-                setExportButtonsDisabled(false);
-            }});
-            gif.render();
+        renderGifBlob().then(function(blob) {{
+            downloadBlob(blob, {filename_json});
+            setStatus("Downloaded " + {filename_json});
+            setExportButtonsDisabled(false);
         }}).catch(function(error) {{
             setStatus(error && error.message ? error.message : "GIF export failed.");
             setExportButtonsDisabled(false);

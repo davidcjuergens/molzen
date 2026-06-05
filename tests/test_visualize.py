@@ -177,12 +177,18 @@ def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> No
     assert "molzen_gif_export_controls_UNIQUEID" in view.startjs
     assert "molzen_clipboard_copy_button_UNIQUEID" in view.startjs
     assert "molzen_png_export_button_UNIQUEID" in view.startjs
+    assert "molzen_gif_clipboard_copy_button_UNIQUEID" in view.startjs
     assert "molzen_gif_export_button_UNIQUEID" in view.startjs
-    assert "Copy to clipboard" in view.startjs
+    assert "Copy PNG" in view.startjs
     assert "Export PNG" in view.startjs
+    assert "Copy GIF" in view.startjs
     assert "Export GIF" in view.startjs
     assert "white-space: nowrap; flex: 0 0 auto" in view.startjs
-    assert "flex: 0 0 190px; white-space: nowrap" in view.startjs
+    assert "text-align: center" in view.startjs
+    assert "molzen_export_button_group_UNIQUEID" in view.startjs
+    assert "display: inline-flex" in view.startjs
+    assert "left: calc(100% + 8px)" in view.startjs
+    assert "width: 220px; white-space: nowrap" in view.startjs
     assert "gif.js@0.2.0/dist/gif.min.js" in view.startjs
     assert "gif.js@0.2.0/dist/gif.worker.js" in view.startjs
     assert "var gifAmdFactory = null" in view.startjs
@@ -199,15 +205,22 @@ def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> No
     assert "if(true && 2 > 1)" in view.startjs
     assert "String(frameSequence.length)" in view.startjs
     assert "var frameDelaysMs = []" in view.startjs
-    assert "? frameDelaysMs[i] : 75" in view.startjs
+    assert "? frameDelaysMs[i]" in view.startjs
+    assert ": 75" in view.startjs
     assert "delay: frameDelay" in view.startjs
     assert "copyClipboardButton.addEventListener" in view.startjs
     assert "copyCanvasPngToClipboard(canvas)" in view.startjs
+    assert "copyGifButton.addEventListener" in view.startjs
+    assert "copyGifBlobToClipboard(blob)" in view.startjs
+    assert "Clipboard GIF copy is not available in this browser." in view.startjs
+    assert "Copied GIF to clipboard." in view.startjs
+    assert "renderGifBlob()" in view.startjs
     assert "captureFrame(pngScale)" in view.startjs
     assert "function normalizedScale(scale)" in view.startjs
     assert "context.scale(scale, scale)" in view.startjs
     assert "navigator.clipboard.write([item])" in view.startjs
     assert "new window.ClipboardItem" in view.startjs
+    assert '"image/gif"' in view.startjs
     assert "Clipboard image copy is not available in this browser." in view.startjs
     assert "Copied PNG to clipboard." in view.startjs
     assert "pngExportButton.addEventListener" in view.startjs
@@ -315,7 +328,8 @@ def test_show_multiframe_molecule_can_set_gif_total_time(monkeypatch) -> None:
 
     assert "if(false && 3 > 1)" in view.startjs
     assert "var frameDelaysMs = [1330, 1340, 1330]" in view.startjs
-    assert "? frameDelaysMs[i] : 1330" in view.startjs
+    assert "? frameDelaysMs[i]" in view.startjs
+    assert ": 1330" in view.startjs
     assert "delay: frameDelay" in view.startjs
 
 
