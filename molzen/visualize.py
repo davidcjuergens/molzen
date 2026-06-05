@@ -256,7 +256,9 @@ def _insert_py3dmol_html_before_script(view: Any, html_fragment: str) -> None:
     script_marker = "<script>\n"
     if script_marker not in view.startjs:
         raise ValueError("Could not find py3Dmol script marker for HTML injection.")
-    view.startjs = view.startjs.replace(script_marker, f"{html_fragment}{script_marker}", 1)
+    view.startjs = view.startjs.replace(
+        script_marker, f"{html_fragment}{script_marker}", 1
+    )
 
 
 def _add_py3dmol_frame_slider(view: Any, n_frames: int, width: str | int) -> None:
@@ -358,11 +360,7 @@ def _fixed_y_ticks(y_min: float, y_max: float, increment: float) -> list[float]:
     y_min = float(y_min)
     y_max = float(y_max)
     increment = float(increment)
-    if (
-        not np.isfinite(y_min)
-        or not np.isfinite(y_max)
-        or not np.isfinite(increment)
-    ):
+    if not np.isfinite(y_min) or not np.isfinite(y_max) or not np.isfinite(increment):
         raise ValueError("y tick values must be finite.")
     if y_max <= y_min:
         raise ValueError("y_max must be greater than y_min.")
@@ -372,8 +370,7 @@ def _fixed_y_ticks(y_min: float, y_max: float, increment: float) -> list[float]:
     first_tick_index = int(np.ceil(y_min / increment))
     last_tick_index = int(np.floor(y_max / increment))
     return [
-        round(i * increment, 10)
-        for i in range(first_tick_index, last_tick_index + 1)
+        round(i * increment, 10) for i in range(first_tick_index, last_tick_index + 1)
     ]
 
 

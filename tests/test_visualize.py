@@ -226,11 +226,11 @@ def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> No
     assert "pngExportButton.addEventListener" in view.startjs
     assert "setFrame(currentFrame())" in view.startjs
     assert "canvasToPngBlob(canvas)" in view.startjs
-    assert "downloadCanvasPng(canvas, \"molzen.png\")" in view.startjs
+    assert 'downloadCanvasPng(canvas, "molzen.png")' in view.startjs
     assert "canvas.toBlob" in view.startjs
     assert '"image/png"' in view.startjs
-    assert "capturePlotPanel(\"energy\", scale)" in view.startjs
-    assert "capturePlotPanel(\"oscillator\", scale)" in view.startjs
+    assert 'capturePlotPanel("energy", scale)' in view.startjs
+    assert 'capturePlotPanel("oscillator", scale)' in view.startjs
     assert "drawPanelLabels(context, panelElement, panelRect)" in view.startjs
     assert "molzen_show_row_UNIQUEID" in view.startjs
     assert "margin-left: 48px; width: 294px; font-size: 14px" in view.startjs
@@ -240,7 +240,7 @@ def test_show_multiframe_molecule_can_add_gif_export_controls(monkeypatch) -> No
     assert "molzenUpdateEnergyFrame_UNIQUEID(frame)" in view.startjs
     assert "molzen_energy_panel_UNIQUEID" in view.startjs
     assert "molzen_energy_svg_UNIQUEID" in view.startjs
-    assert "downloadBlob(blob, \"molzen.gif\")" in view.startjs
+    assert 'downloadBlob(blob, "molzen.gif")' in view.startjs
 
 
 def test_show_multiframe_molecule_rejects_invalid_gif_delay(monkeypatch) -> None:
