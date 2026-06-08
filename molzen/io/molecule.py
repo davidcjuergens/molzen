@@ -1525,9 +1525,9 @@ class Molecule(Mapping[str, Any]):
         )
 
     @classmethod
-    def from_xyz(cls, file_path: str) -> Molecule:
+    def from_xyz(cls, file_path: str, **kwargs) -> Molecule:
         """Load a molecule from an XYZ file path."""
-        payload = xyz_io.parse_xyz(file_path)
+        payload = xyz_io.parse_xyz(file_path, **kwargs)
         return cls(_legacy_view="xyz", **payload)
 
     def to_xyz(self, file_path: str, return_str: bool = False) -> str | None:
