@@ -251,6 +251,30 @@ def _center_py3dmol_view(view: Any) -> None:
     )
 
 
+def _coerce_hover_duration_ms(hover_duration: float) -> int:
+    """Return a finite, non-negative hover duration in milliseconds."""
+    try:
+        duration = float(hover_duration)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("atom_hover_duration must be a number of seconds.") from exc
+    if not np.isfinite(duration) or duration < 0:
+        raise ValueError("atom_hover_duration must be a finite, non-negative number.")
+    return int(round(duration * 1000))
+
+
+def _set_py3dmol_hover_duration(view: Any, hover_duration: float) -> None:
+    """Configure 3Dmol's hover callback delay on a py3Dmol view."""
+    hover_duration_ms = _coerce_hover_duration_ms(hover_duration)
+    viewer_config = '{backgroundColor:"white"}'
+    if viewer_config not in view.startjs:
+        raise ValueError("Could not find py3Dmol viewer config for hover duration.")
+    view.startjs = view.startjs.replace(
+        viewer_config,
+        f'{{backgroundColor:"white", hoverDuration: {hover_duration_ms}}}',
+        1,
+    )
+
+
 def _insert_py3dmol_html_before_script(view: Any, html_fragment: str) -> None:
     """Insert HTML between the py3Dmol viewer markup and startup script."""
     script_marker = "<script>\n"
@@ -280,11 +304,20 @@ if(frameSlider_UNIQUEID && frameLabel_UNIQUEID) {
         if(typeof window.molzenUpdateEnergyFrame_UNIQUEID === "function") {
             window.molzenUpdateEnergyFrame_UNIQUEID(frame);
         }
+        if(typeof window.molzenClearAtomHoverLabel_UNIQUEID === "function") {
+            window.molzenClearAtomHoverLabel_UNIQUEID();
+        }
+        function finishFrameUpdate() {
+            if(typeof window.molzenEnableAtomHoverLabels_UNIQUEID === "function") {
+                window.molzenEnableAtomHoverLabels_UNIQUEID();
+            }
+            viewer_UNIQUEID.render();
+        }
         var framePromise = viewer_UNIQUEID.setFrame(frame);
         if(framePromise && typeof framePromise.then === "function") {
-            framePromise.then(function() { viewer_UNIQUEID.render(); });
+            framePromise.then(finishFrameUpdate);
         } else {
-            viewer_UNIQUEID.render();
+            finishFrameUpdate();
         }
     });
 }
@@ -880,15 +913,21 @@ def _add_py3dmol_gif_export_controls(
         if(typeof window.molzenUpdateEnergyFrame_UNIQUEID === "function") {{
             window.molzenUpdateEnergyFrame_UNIQUEID(frame);
         }}
+        if(typeof window.molzenClearAtomHoverLabel_UNIQUEID === "function") {{
+            window.molzenClearAtomHoverLabel_UNIQUEID();
+        }}
+        function finishFrameUpdate() {{
+            if(typeof window.molzenEnableAtomHoverLabels_UNIQUEID === "function") {{
+                window.molzenEnableAtomHoverLabels_UNIQUEID();
+            }}
+            viewer_UNIQUEID.render();
+            return waitForPaint();
+        }}
         var framePromise = viewer_UNIQUEID.setFrame(frame);
         if(framePromise && typeof framePromise.then === "function") {{
-            return framePromise.then(function() {{
-                viewer_UNIQUEID.render();
-                return waitForPaint();
-            }});
+            return framePromise.then(finishFrameUpdate);
         }}
-        viewer_UNIQUEID.render();
-        return waitForPaint();
+        return finishFrameUpdate();
     }}
 
     function downloadBlob(blob, filename) {{
@@ -1390,6 +1429,127 @@ def _apply_py3dmol_style(view: Any, style: dict[str, Any] | None) -> None:
     view.setStyle({"elem": "H"}, {"stick": {"radius": 0.06}, "sphere": {"scale": 0.21}})
 
 
+def _atom_hover_label_name(row: np.void, fallback_index: int) -> str:
+    """Return the atom name to show in a hover label."""
+    atom_name = str(row["atom_name"]).strip()
+    if atom_name:
+        return atom_name
+
+    atom_type = str(row["atom_type"]).strip()
+    if atom_type:
+        return atom_type
+
+    element = str(row["element"]).strip().capitalize()
+    if element:
+        return element
+
+    return f"Atom {fallback_index + 1}"
+
+
+def _atom_hover_label_records(atom_records: np.ndarray) -> list[dict[str, int | str]]:
+    """Return compact per-atom label data for browser-side hover callbacks."""
+    labels: list[dict[str, int | str]] = []
+    for row_position, row in enumerate(atom_records):
+        try:
+            atom_index = int(row["atom_index"])
+        except (TypeError, ValueError):
+            atom_index = row_position
+        labels.append(
+            {
+                "name": _atom_hover_label_name(row, row_position),
+                "index": atom_index,
+            }
+        )
+    return labels
+
+
+def _add_py3dmol_atom_hover_labels(view: Any, atom_records: np.ndarray) -> None:
+    """Attach atom-name and molecule-index hover labels to a py3Dmol view."""
+    labels_json = json.dumps(_atom_hover_label_records(atom_records))
+    script = f"""
+var molzenAtomHoverLabels_UNIQUEID = {labels_json};
+function molzenAtomHoverNumber_UNIQUEID(value) {{
+    if(typeof value === "number" && Number.isFinite(value)) {{
+        return Math.trunc(value);
+    }}
+    if(typeof value === "string" && value.trim() !== "") {{
+        var parsed = parseInt(value, 10);
+        if(Number.isFinite(parsed)) {{
+            return parsed;
+        }}
+    }}
+    return null;
+}}
+function molzenAtomHoverLabelIndex_UNIQUEID(atom) {{
+    if(!atom) {{
+        return -1;
+    }}
+    var index = molzenAtomHoverNumber_UNIQUEID(atom.index);
+    if(index !== null && index >= 0 && index < molzenAtomHoverLabels_UNIQUEID.length) {{
+        return index;
+    }}
+    var serial = molzenAtomHoverNumber_UNIQUEID(atom.serial);
+    if(serial !== null) {{
+        var oneBasedIndex = serial - 1;
+        if(oneBasedIndex >= 0 && oneBasedIndex < molzenAtomHoverLabels_UNIQUEID.length) {{
+            return oneBasedIndex;
+        }}
+        if(serial >= 0 && serial < molzenAtomHoverLabels_UNIQUEID.length) {{
+            return serial;
+        }}
+    }}
+    return -1;
+}}
+function molzenRemoveAtomHoverLabel_UNIQUEID(viewer) {{
+    if(window.molzenAtomHoverActiveLabel_UNIQUEID) {{
+        viewer.removeLabel(window.molzenAtomHoverActiveLabel_UNIQUEID);
+        window.molzenAtomHoverActiveLabel_UNIQUEID = null;
+    }}
+}}
+window.molzenClearAtomHoverLabel_UNIQUEID = function() {{
+    molzenRemoveAtomHoverLabel_UNIQUEID(viewer_UNIQUEID);
+}};
+function molzenAtomHoverCallback_UNIQUEID(atom, viewer) {{
+        if(!atom) {{
+            return;
+        }}
+        var labelIndex = molzenAtomHoverLabelIndex_UNIQUEID(atom);
+        if(labelIndex < 0) {{
+            return;
+        }}
+        var atomInfo = molzenAtomHoverLabels_UNIQUEID[labelIndex];
+        var labelText = atomInfo.name + " (index " + atomInfo.index + ")";
+        molzenRemoveAtomHoverLabel_UNIQUEID(viewer);
+        window.molzenAtomHoverActiveLabel_UNIQUEID = viewer.addLabel(labelText, {{
+            position: atom,
+            backgroundColor: "#111827",
+            backgroundOpacity: 0.85,
+            borderThickness: 0,
+            fontColor: "#ffffff",
+            fontSize: 12,
+            inFront: true,
+            padding: 4,
+            screenOffset: {{x: 16, y: -16}}
+        }});
+        viewer.render();
+}}
+function molzenAtomUnhoverCallback_UNIQUEID(atom, viewer) {{
+    molzenRemoveAtomHoverLabel_UNIQUEID(viewer);
+    viewer.render();
+}}
+window.molzenEnableAtomHoverLabels_UNIQUEID = function() {{
+    viewer_UNIQUEID.setHoverable(
+        {{}},
+        true,
+        molzenAtomHoverCallback_UNIQUEID,
+        molzenAtomUnhoverCallback_UNIQUEID
+    );
+}};
+window.molzenEnableAtomHoverLabels_UNIQUEID();
+"""
+    view.startjs += script
+
+
 def show_molecule_py3dmol(
     mol: Molecule,
     *,
@@ -1404,6 +1564,8 @@ def show_molecule_py3dmol(
     gif_total_time: float | None = None,
     gif_bounce: bool = False,
     png_scale: float = 2.0,
+    atom_hover_labels: bool = True,
+    atom_hover_duration: float = 0.25,
 ) -> Any:
     """Return a py3Dmol view for a molecule.
 
@@ -1425,6 +1587,9 @@ def show_molecule_py3dmol(
             backward to the first frame.
         png_scale: Pixel scale for PNG and clipboard exports. A value of 2.0
             exports twice the notebook display dimensions.
+        atom_hover_labels: Whether atoms should show their name and molecule
+            index when hovered.
+        atom_hover_duration: Delay in seconds before atom hover labels appear.
     """
     py3dmol = _require_py3dmol()
     atom_records = mol.atom_records
@@ -1433,11 +1598,15 @@ def show_molecule_py3dmol(
 
     view = py3dmol.view(width=width, height=height)
     _center_py3dmol_view(view)
+    if atom_hover_labels:
+        _set_py3dmol_hover_duration(view, atom_hover_duration)
 
     if frame is None and _frame_count(atom_records) > 1:
         n_frames = _frame_count(atom_records)
         view.addModelsAsFrames(_xyz_text(atom_records), "xyz")
         _apply_py3dmol_style(view, style)
+        if atom_hover_labels:
+            _add_py3dmol_atom_hover_labels(view, atom_records)
         _add_state_property_plots(
             view,
             records=mol.excited_state_records,
@@ -1464,6 +1633,8 @@ def show_molecule_py3dmol(
         frame_index = 0 if frame is None else _coerce_frame_index(atom_records, frame)
         view.addModel(_xyz_text(atom_records, frame=frame_index), "xyz")
         _apply_py3dmol_style(view, style)
+        if atom_hover_labels:
+            _add_py3dmol_atom_hover_labels(view, atom_records)
         _add_state_property_plots(
             view,
             records=mol.excited_state_records,

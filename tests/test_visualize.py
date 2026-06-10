@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import re
 from builtins import __import__ as builtin_import
 from pathlib import Path
 from types import ModuleType
@@ -31,6 +32,7 @@ class FakePy3DmolView:
             '<div id="3dmolviewer_UNIQUEID"  '
             'style="position: relative; width: 420px; height: 240px;">\n'
             "</div>\n<script>\n"
+            'viewer_UNIQUEID = $3Dmol.createViewer(document.getElementById("3dmolviewer_UNIQUEID"),{backgroundColor:"white"});\n'
         )
         self.model_text: str | None = None
         self.model_format: str | None = None
@@ -118,6 +120,101 @@ def test_show_single_frame_xyz_molecule(monkeypatch) -> None:
     assert view.zoomed
 
 
+def test_show_adds_atom_hover_labels(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=float),
+        atom_names=["CA", "OXT"],
+        elements=["C", "O"],
+    )
+
+    view = mol.show()
+
+    assert 'hoverDuration: 250' in view.startjs
+    assert "molzenAtomHoverLabels_UNIQUEID" in view.startjs
+    assert '"name": "CA", "index": 0' in view.startjs
+    assert '"name": "OXT", "index": 1' in view.startjs
+    assert "window.molzenClearAtomHoverLabel_UNIQUEID" in view.startjs
+    assert "window.molzenEnableAtomHoverLabels_UNIQUEID = function()" in view.startjs
+    assert "viewer_UNIQUEID.setHoverable(" in view.startjs
+    assert 'atomInfo.name + " (index " + atomInfo.index + ")"' in view.startjs
+    assert "viewer.addLabel(labelText" in view.startjs
+    assert "screenOffset: {x: 16, y: -16}" in view.startjs
+    assert "viewer.removeLabel(window.molzenAtomHoverActiveLabel_UNIQUEID)" in view.startjs
+
+
+def test_show_can_disable_atom_hover_labels(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        atom_names=["H1"],
+        elements=["H"],
+    )
+
+    view = mol.show(atom_hover_labels=False)
+
+    assert "hoverDuration" not in view.startjs
+    assert "molzenAtomHoverLabels_UNIQUEID" not in view.startjs
+    assert "setHoverable" not in view.startjs
+
+
+def test_show_can_customize_atom_hover_duration(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        atom_names=["H1"],
+        elements=["H"],
+    )
+
+    view = mol.show(atom_hover_duration=0.15)
+
+    assert 'hoverDuration: 150' in view.startjs
+
+
+def test_show_rejects_invalid_atom_hover_duration(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+
+    mol = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        atom_names=["H1"],
+        elements=["H"],
+    )
+
+    with pytest.raises(ValueError, match="atom_hover_duration"):
+        mol.show(atom_hover_duration=-0.1)
+
+
+def test_show_atom_hover_labels_survive_py3dmol_html_render() -> None:
+    pytest.importorskip("py3Dmol")
+
+    mol = Molecule(
+        xyz=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=float),
+        atom_names=["CA", "OXT"],
+        elements=["C", "O"],
+    )
+
+    view = mol.show()
+    html = view.write_html()
+
+    assert "UNIQUEID" not in html
+    assert "molzenAtomHoverLabels_" in html
+    assert '"name": "CA", "index": 0' in html
+    assert '"name": "OXT", "index": 1' in html
+    assert "hoverDuration: 250" in html
+    assert re.search(r"window\.molzenEnableAtomHoverLabels_[0-9]+ = function", html)
+    assert re.search(r"viewer_[0-9]+\.setHoverable\(", html)
+    assert "viewer.addLabel(labelText" in html
+    assert "screenOffset: {x: 16, y: -16}" in html
+    assert "viewer.removeLabel(window.molzenAtomHoverActiveLabel_" in html
+
+
 def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
     fake_py3dmol = FakePy3Dmol()
     monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
@@ -150,6 +247,9 @@ def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
     assert "margin: 4px auto 0 auto" in view.startjs
     assert 'max="1"' in view.startjs
     assert "setFrame(frame)" in view.startjs
+    assert "window.molzenClearAtomHoverLabel_UNIQUEID" in view.startjs
+    assert "window.molzenEnableAtomHoverLabels_UNIQUEID" in view.startjs
+    assert "framePromise.then(finishFrameUpdate)" in view.startjs
     assert view.zoomed
 
 

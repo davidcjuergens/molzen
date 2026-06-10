@@ -1486,6 +1486,8 @@ class Molecule(Mapping[str, Any]):
         gif_total_time: float | None = None,
         gif_bounce: bool = False,
         png_scale: float = 2.0,
+        atom_hover_labels: bool = True,
+        atom_hover_duration: float = 0.25,
     ) -> Any:
         """Return a py3Dmol view for the molecule.
 
@@ -1504,6 +1506,9 @@ class Molecule(Mapping[str, Any]):
                 backward to the first frame.
             png_scale: Pixel scale for PNG and clipboard exports. A value of 2.0
                 exports twice the notebook display dimensions.
+            atom_hover_labels: Whether atoms should show their name and molecule
+                index when hovered.
+            atom_hover_duration: Delay in seconds before atom hover labels appear.
         """
 
         # optional dependency, so lazy import
@@ -1522,6 +1527,8 @@ class Molecule(Mapping[str, Any]):
             gif_total_time=gif_total_time,
             gif_bounce=gif_bounce,
             png_scale=png_scale,
+            atom_hover_labels=atom_hover_labels,
+            atom_hover_duration=atom_hover_duration,
         )
 
     @classmethod
