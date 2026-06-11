@@ -22,9 +22,18 @@ HBAR = 1.0546e-34  # angular momentum: reduced Planck constant (J*s), for higher
 JOULE_PER_HARTREE = 4.359744722e-18  # energy: Hartree (J)
 # from: http://wild.life.nctu.edu.tw/class/common/energy-unit-conv-table.html
 HARTREE2KCALMOL = 627.5
+hartree_to_kcalmol = HARTREE2KCALMOL
 EV2KCALMOL = 23.06
+ev_to_kcalmol = EV2KCALMOL
 HARTREE2EV = 27.2107
+hartree_to_ev = HARTREE2EV
 HARTREE2MEV = HARTREE2EV * 1000
+hartree_to_mev = HARTREE2MEV
+# from NIST: https://physics.nist.gov/cgi-bin/cuu/Convert?exp=0&num=1&From=hr&To=minv&Action=Convert+value+and+show+factor
+HARTREE2INVERSE_M = 2.1947463136314e7  # Hartree --> inverse meter
+hartree_to_inverse_m = HARTREE2INVERSE_M
+HARTREE2INVERSE_CM = HARTREE2INVERSE_M / 100
+hartree_to_inverse_cm = HARTREE2INVERSE_CM
 
 
 # time
