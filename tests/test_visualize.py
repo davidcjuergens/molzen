@@ -132,7 +132,7 @@ def test_show_adds_atom_hover_labels(monkeypatch) -> None:
 
     view = mol.show()
 
-    assert 'hoverDuration: 250' in view.startjs
+    assert "hoverDuration: 250" in view.startjs
     assert "molzenAtomHoverLabels_UNIQUEID" in view.startjs
     assert '"name": "CA", "index": 0' in view.startjs
     assert '"name": "OXT", "index": 1' in view.startjs
@@ -142,7 +142,9 @@ def test_show_adds_atom_hover_labels(monkeypatch) -> None:
     assert 'atomInfo.name + " (index " + atomInfo.index + ")"' in view.startjs
     assert "viewer.addLabel(labelText" in view.startjs
     assert "screenOffset: {x: 16, y: -16}" in view.startjs
-    assert "viewer.removeLabel(window.molzenAtomHoverActiveLabel_UNIQUEID)" in view.startjs
+    assert (
+        "viewer.removeLabel(window.molzenAtomHoverActiveLabel_UNIQUEID)" in view.startjs
+    )
 
 
 def test_show_can_disable_atom_hover_labels(monkeypatch) -> None:
@@ -174,7 +176,7 @@ def test_show_can_customize_atom_hover_duration(monkeypatch) -> None:
 
     view = mol.show(atom_hover_duration=0.15)
 
-    assert 'hoverDuration: 150' in view.startjs
+    assert "hoverDuration: 150" in view.startjs
 
 
 def test_show_rejects_invalid_atom_hover_duration(monkeypatch) -> None:
