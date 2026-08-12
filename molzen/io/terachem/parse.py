@@ -1017,9 +1017,7 @@ def parse_excited_state_section(
                 source=source,
                 state_i=0,
                 state_j=root,
-                multiplicity=infer_multiplicity_from_s_squared(
-                    state_data["s_squared"]
-                ),
+                multiplicity=infer_multiplicity_from_s_squared(state_data["s_squared"]),
                 total_energy_au=state_data["total_energy_au"],
                 # "Final Excited State Results" reports excitation energies in eV.
                 exc_energy_ev=state_data["exc_energy_ev"],
