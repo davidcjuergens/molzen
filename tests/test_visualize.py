@@ -613,6 +613,53 @@ def test_excited_state_energy_series_converts_hartree_to_relative_ev() -> None:
     assert series[1]["y"] == pytest.approx([0.5 * HARTREE2EV])
 
 
+def test_excited_state_series_sorts_state_numbers_and_infers_multiplicity() -> None:
+    records = [
+        {
+            "frame_index": 0,
+            "state_i": 0,
+            "state_j": 10,
+            "total_energy_au": -7.0,
+            "osc_strength": 0.10,
+            "s_squared": 0.0,
+        },
+        {
+            "frame_index": 0,
+            "state_j": 0,
+            "total_energy_au": -10.0,
+            "s_squared": 0.0,
+        },
+        {
+            "frame_index": 0,
+            "state_i": 0,
+            "state_j": 2,
+            "total_energy_au": -9.0,
+            "osc_strength": 0.20,
+            "s_squared": 0.0,
+        },
+        {
+            "frame_index": 0,
+            "state_i": 0,
+            "state_j": 1,
+            "total_energy_au": -9.5,
+            "osc_strength": 0.30,
+            "s_squared": 0.0,
+        },
+    ]
+
+    energy_series = _excited_state_energy_series(records)
+    oscillator_series = _excited_state_oscillator_strength_series(records)
+
+    assert [item["label"] for item in energy_series] == ["S0", "S1", "S2", "S10"]
+    assert [item["color_index"] for item in energy_series] == [0, 1, 2, 10]
+    assert [item["label"] for item in oscillator_series] == [
+        "S0->S1",
+        "S0->S2",
+        "S0->S10",
+    ]
+    assert [item["color_index"] for item in oscillator_series] == [1, 2, 10]
+
+
 def test_excited_state_oscillator_strength_series_uses_s0_to_sn_records() -> None:
     series = _excited_state_oscillator_strength_series(
         [

@@ -9,12 +9,25 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from molzen.constants import HARTREE2EV
+from molzen.io.terachem.parse import infer_multiplicity_from_s_squared
 
 if TYPE_CHECKING:
     from molzen.io.molecule import Molecule
 
 
 _PLOT_FONT_FAMILY = "Arial, Helvetica, sans-serif"
+_MULTIPLICITY_SORT_ORDER = {
+    "singlet": 1,
+    "doublet": 2,
+    "triplet": 3,
+    "quartet": 4,
+    "quintet": 5,
+    "sextet": 6,
+    "septet": 7,
+    "octet": 8,
+    "nonet": 9,
+    "decet": 10,
+}
 
 
 def _frame_count(atom_records: np.ndarray) -> int:
@@ -97,6 +110,20 @@ def _record_int(record: dict[str, Any], key: str) -> int | None:
     return int(value)
 
 
+def _display_multiplicity(record: dict[str, Any]) -> str:
+    """Return explicit or S^2-inferred multiplicity for plot labels."""
+    multiplicity = record.get("multiplicity")
+    if isinstance(multiplicity, str) and multiplicity.strip():
+        return multiplicity.strip()
+    inferred = infer_multiplicity_from_s_squared(record.get("s_squared"))
+    return "" if inferred is None else inferred
+
+
+def _multiplicity_sort_key(multiplicity: str) -> tuple[int, str]:
+    normalized = multiplicity.strip().lower()
+    return (_MULTIPLICITY_SORT_ORDER.get(normalized, 999), normalized)
+
+
 def _state_energy_label(multiplicity: Any, state_j: int | None) -> str:
     """Return a compact state label for an excited-state energy trace."""
     if state_j is None:
@@ -154,24 +181,34 @@ def _excited_state_energy_series(
         if baseline_ev is not None:
             energy -= baseline_ev
 
-        multiplicity = record.get("multiplicity") or ""
+        multiplicity = _display_multiplicity(record)
         state_j = _record_int(record, "state_j")
-        key = (str(multiplicity), state_j)
+        key = (multiplicity, state_j)
         grouped.setdefault(key, {})
         grouped[key].setdefault(frame_index, energy)
         labels[key] = _state_energy_label(multiplicity, state_j)
 
     series = []
-    for key, frame_to_energy in grouped.items():
+    sorted_keys = sorted(
+        grouped,
+        key=lambda key: (
+            _multiplicity_sort_key(key[0]),
+            key[1] is None,
+            float("inf") if key[1] is None else key[1],
+        ),
+    )
+    for key in sorted_keys:
+        frame_to_energy = grouped[key]
         frames = sorted(frame_to_energy)
-        series.append(
-            {
-                "label": labels[key],
-                "x": frames,
-                "y": [frame_to_energy[frame] for frame in frames],
-            }
-        )
-    return sorted(series, key=lambda item: item["label"])
+        item = {
+            "label": labels[key],
+            "x": frames,
+            "y": [frame_to_energy[frame] for frame in frames],
+        }
+        if isinstance(key[1], int):
+            item["color_index"] = key[1]
+        series.append(item)
+    return series
 
 
 def _excited_state_oscillator_strength_series(
@@ -196,14 +233,25 @@ def _excited_state_oscillator_strength_series(
         ):
             continue
 
-        multiplicity = record.get("multiplicity") or ""
-        key = (str(multiplicity), state_i, state_j)
+        multiplicity = _display_multiplicity(record)
+        key = (multiplicity, state_i, state_j)
         grouped.setdefault(key, {})
         grouped[key].setdefault(frame_index, osc_strength)
         labels[key] = _state_transition_label(multiplicity, state_i, state_j)
 
     series = []
-    for key, frame_to_osc in grouped.items():
+    sorted_keys = sorted(
+        grouped,
+        key=lambda key: (
+            _multiplicity_sort_key(key[0]),
+            key[1] is None,
+            float("inf") if key[1] is None else key[1],
+            key[2] is None,
+            float("inf") if key[2] is None else key[2],
+        ),
+    )
+    for key in sorted_keys:
+        frame_to_osc = grouped[key]
         frames = sorted(frame_to_osc)
         series.append(
             {
@@ -213,7 +261,7 @@ def _excited_state_oscillator_strength_series(
                 "color_index": key[2],
             }
         )
-    return sorted(series, key=lambda item: item["label"])
+    return series
 
 
 def _pixel_size(value: str | int, default: int) -> int:
