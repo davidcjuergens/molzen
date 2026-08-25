@@ -24,6 +24,41 @@ STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
     "max_ci_coeff": np.nan,
 }
 
+_MULTIPLICITY_NAMES = {
+    1: "singlet",
+    2: "doublet",
+    3: "triplet",
+    4: "quartet",
+    5: "quintet",
+    6: "sextet",
+    7: "septet",
+    8: "octet",
+    9: "nonet",
+    10: "decet",
+}
+
+
+def infer_multiplicity_from_s_squared(
+    s_squared: float | int | str | None, *, tolerance: float = 0.25
+) -> str | None:
+    """Infer a spin multiplicity label from <S^2>, if it is close to valid spin."""
+    try:
+        value = float(s_squared)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(value) or value < 0:
+        return None
+
+    multiplicity = int(round(np.sqrt(1.0 + 4.0 * value)))
+    if multiplicity < 1:
+        return None
+
+    spin = (multiplicity - 1) / 2.0
+    expected_s_squared = spin * (spin + 1.0)
+    if abs(value - expected_s_squared) > tolerance:
+        return None
+    return _MULTIPLICITY_NAMES.get(multiplicity, f"{multiplicity}-plet")
+
 
 def make_standardized_excited_record(**kwargs) -> dict:
     """Create one standardized excited-state record with defaults for missing fields."""
@@ -141,9 +176,11 @@ def parse_terachem_output(
             else:
                 # possible this occurs if we are missing kwarg aliases for "minimize", e.g., "optimize"
                 # if so, update
-                raise RuntimeError(
-                    "Minimization convergence status found but did not detect minimization!"
+                print(
+                    f"WARNING: Found '{MINIMIZE_CONVERGED_HEADER}' in output but did not detect minimization in job."
                 )
+                print("Setting minimization_converged to True anyways.")
+                out["minimization_converged"] = True
 
         #### Excited State Results ###
         if EXCITED_STATES_RESULTS_HEADER in line:
@@ -952,7 +989,7 @@ def parse_excited_state_section(
     source = inspect.currentframe().f_code.co_name
 
     def check_end(myline):
-        return myline.isspace()
+        return not myline.strip()
 
     def excited_state_line_parser(myline):
         parts = myline.strip().split()
@@ -980,6 +1017,7 @@ def parse_excited_state_section(
                 source=source,
                 state_i=0,
                 state_j=root,
+                multiplicity=infer_multiplicity_from_s_squared(state_data["s_squared"]),
                 total_energy_au=state_data["total_energy_au"],
                 # "Final Excited State Results" reports excitation energies in eV.
                 exc_energy_ev=state_data["exc_energy_ev"],

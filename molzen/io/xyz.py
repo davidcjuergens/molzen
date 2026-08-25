@@ -7,8 +7,24 @@ from typing import Any
 import numpy as np
 
 
-def parse_xyz(xyz_fp: str) -> dict[str, Any]:
-    """Parse a `.xyz` file with one or more frames."""
+class XYZParseError(ValueError):
+    """Raise when .xyz parsing fails."""
+
+
+class CoordinatesNotFoundError(XYZParseError):
+    """Raise when .xyz parsing fails to find coordinates."""
+
+
+def parse_xyz(
+    xyz_fp: str, allow_extra_columns: bool = False, allow_trailing_records: bool = False
+) -> dict[str, Any]:
+    """Parse a `.xyz` file with one or more frames.
+
+    Args:
+        xyz_fp: Path to the `.xyz` file to parse.
+        allow_extra_columns: If True, allow XYZ atom lines to have more than 4 columns (atom, x, y, z, ...).
+        allow_trailing_records: If True, allow extra lines after the last atom in a frame.
+    """
     xyzs: list[list[list[float]]] = []
     comments: list[str] = []
     elements: list[str] | None = None
@@ -26,6 +42,8 @@ def parse_xyz(xyz_fp: str) -> dict[str, Any]:
         try:
             natoms = int(line)
         except ValueError as exc:
+            if allow_trailing_records and xyzs:
+                break
             raise ValueError(f"Invalid atom count at line {i + 1}: {line!r}") from exc
         i += 1
 
@@ -45,7 +63,7 @@ def parse_xyz(xyz_fp: str) -> dict[str, Any]:
                 )
 
             split = lines[i].split()
-            if len(split) != 4:
+            if not allow_extra_columns and len(split) != 4:
                 raise ValueError(
                     f"Malformed XYZ atom line {i + 1}: expected 4 columns, got "
                     f"{len(split)}."
@@ -71,7 +89,9 @@ def parse_xyz(xyz_fp: str) -> dict[str, Any]:
         xyzs.append(frame_xyz)
 
     if not xyzs:
-        raise ValueError(f"No coordinate frames found in XYZ file: {xyz_fp}")
+        raise CoordinatesNotFoundError(
+            f"No coordinate frames found in XYZ file: {xyz_fp}"
+        )
 
     return {
         "xyz": np.array(xyzs, dtype=float),

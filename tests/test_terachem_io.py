@@ -149,6 +149,23 @@ def test_parse_hhtda_superset_casscf_energy_header():
     assert records[1]["exc_energy_nm"] == 307.08688619
 
 
+def test_parse_final_excited_state_results_infers_multiplicity_from_s_squared():
+    raw = """
+  Final Excited State Results:
+
+  Root   Total Energy (a.u.)   Ex. Energy (eV)   Osc. (a.u.)   < S^2 >   Max CI Coeff.      Excitation
+------------------------------------------------------------------------------------------------------------
+     1          -1.00000000        2.00000000       0.1000      0.0000      0.700000     1 ->   2 : D -> V
+     2          -0.90000000        3.00000000       0.2000      2.0000      0.800000     1 ->   3 : D -> V
+
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    records = parsed["excited_state_records"]
+    assert records[0]["multiplicity"] == "singlet"
+    assert records[1]["multiplicity"] == "triplet"
+
+
 def test_parse_casscf_orbitals_without_occupations(tmp_path):
     """Orbital sections without occupation column should parse with nan occupancies."""
     output_path = tmp_path / "terachem_orbitals_no_occ.out"
@@ -331,3 +348,19 @@ def test_args_importable():
     from molzen.io.terachem.args.cc import CCSD_ARGS, EOMCCSD_ARGS
     from molzen.io.terachem.args.dft import HH_TDA, WPBE, hhtda_fon
     from molzen.io.terachem.args.hf import FON_KWARGS, HF_ENERGY
+
+    assert all(
+        item is not None
+        for item in (
+            CAS_FON_ENERGY,
+            CAS_GRAD,
+            CAS_KWARGS,
+            CCSD_ARGS,
+            EOMCCSD_ARGS,
+            HH_TDA,
+            WPBE,
+            hhtda_fon,
+            FON_KWARGS,
+            HF_ENERGY,
+        )
+    )

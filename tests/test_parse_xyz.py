@@ -74,6 +74,40 @@ def test_slice_frames_returns_new_molecule_with_selected_frames(tmp_path):
     np.testing.assert_allclose(out[1:3].xyz, out.xyz[1:3])
 
 
+def test_integer_getitem_returns_single_selected_frame(tmp_path):
+    xyz_file = tmp_path / "frames.xyz"
+    xyz_file.write_text(
+        "2\n"
+        "frame-0\n"
+        "H 0.0 0.0 0.0\n"
+        "O 0.0 0.0 1.0\n"
+        "2\n"
+        "frame-1\n"
+        "H 0.0 0.1 0.0\n"
+        "O 0.0 0.1 1.0\n"
+        "2\n"
+        "frame-2\n"
+        "H 0.0 0.2 0.0\n"
+        "O 0.0 0.2 1.0\n"
+    )
+
+    out = Molecule.from_xyz(str(xyz_file))
+    final_frame = out[-1]
+
+    assert isinstance(final_frame, Molecule)
+    assert final_frame.comments == ["frame-2"]
+    assert final_frame.atom_records is not None
+    assert out.atom_records is not None
+    np.testing.assert_allclose(final_frame.xyz, out.xyz[2])
+    np.testing.assert_allclose(
+        final_frame.atom_records["coords"], out.atom_records["coords"][:, 2:3, :]
+    )
+    np.testing.assert_allclose(out[1].xyz, out.xyz[1])
+
+    with pytest.raises(IndexError, match="Frame index 3 out of range"):
+        _ = out[3]
+
+
 def test_repr_does_not_raise_for_multiframe_xyz(tmp_path):
     xyz_file = tmp_path / "frames.xyz"
     xyz_file.write_text(

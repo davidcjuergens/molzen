@@ -2,12 +2,19 @@
 
 import molzen.io as mzio
 from molzen.io.terachem import parse as tcparse, jobs as tcjobs
+from molzen.io.xyz import CoordinatesNotFoundError
 
 import os
 from typing import Dict, List, Union, Optional
 
 
-def get_latest_structure(scrdir: str, xyz_storage_dir: str) -> str:
+def get_latest_structure(
+    scrdir: str,
+    xyz_storage_dir: str,
+    empty_optim_xyz_ok: bool = False,
+    old_input_crds: str | None = None,
+    clobber: bool = False,
+) -> str:
     """Given a terachem scrdir, find the latest structure in the optimization.
     If optim.rst7 exists, simply point to that.
     If not, parse optim.xyz, grab final geometry, write to new .xyz and point to that.
@@ -17,6 +24,11 @@ def get_latest_structure(scrdir: str, xyz_storage_dir: str) -> str:
     Args:
         scrdir: path to terachem scrdir
         xyz_storage_dir: directory to dump new .xyz files if needed. Must exist.
+        empty_optim_xyz_ok: if True, and optim.xyz exists but contains no coordinates/frames, will point
+                            to the original input geometry to restart from instead of failing to parse the optim.xyz.
+                            This is to handle when TeraChem produces an optim.xyz but it's empty.
+        old_input_crds: path to the original input coordinates, used if optim.xyz is empty and empty_optim_xyz_ok is True
+        clobber: if true, will overwrite existing .xyz files in xyz_storage_dir if they exist
     """
 
     # create paths to files that may or may not exist
@@ -33,17 +45,34 @@ def get_latest_structure(scrdir: str, xyz_storage_dir: str) -> str:
 
     # if optim.xyz exists, parse it, grab final frame, write to new .xyz and point to that in new job
     elif os.path.exists(maybe_xyz):
-        mol = mzio.Molecule.from_xyz(maybe_xyz)
-        final_frame = mol[-1]
+        try:
+            mol = mzio.Molecule.from_xyz(maybe_xyz)
+            final_frame = mol[-1]
+
+        except CoordinatesNotFoundError:
+            # Sometimes, terachem produces optim.xyz without any data.
+            # In this case, if user passed in empty_optim_xyz_ok=True,
+            # point to the original input geometry instead of raising.
+            if empty_optim_xyz_ok and old_input_crds is not None:
+                return old_input_crds
+            else:
+                raise
         new_xyz_path = os.path.join(xyz_storage_dir, f"{scrdir_tag}.xyz")
-        assert not os.path.exists(new_xyz_path), (
-            f".xyz file {new_xyz_path} already exists."
-        )
+
+        if not clobber:
+            assert not os.path.exists(new_xyz_path), (
+                f".xyz file {new_xyz_path} already exists."
+            )
+
         final_frame.to_xyz(new_xyz_path)
         return new_xyz_path
 
     else:
-        raise FileNotFoundError(f"No optim.rst7 or optim.xyz found in {scrdir}")
+        # didn't find anything to restart from!
+        if not empty_optim_xyz_ok or old_input_crds is None:
+            raise FileNotFoundError(f"No optim.rst7 or optim.xyz found in {scrdir}")
+        else:
+            return old_input_crds
 
 
 def restart_terachem_optimization_from_latest(
@@ -52,6 +81,7 @@ def restart_terachem_optimization_from_latest(
     terachem_exe: str,
     clobber: bool = False,
     kwarg_updates: dict = None,
+    empty_optim_xyz_ok: bool = False,
 ):
     """Create jobs that restart optimization from latest geometry in scrdir
 
@@ -62,6 +92,8 @@ def restart_terachem_optimization_from_latest(
         clobber: whether to overwrite existing files
         kwarg_updates: dict of any additional keyword arguments to place into new jobs
                        (e.g. if you want to change method, basis, etc. for the restart)
+        empty_optim_xyz_ok: if True, and optim.xyz exists but contains no coordinates/frames, will point
+                            to the original input geometry to restart from instead of failing to parse the optim.xyz.
     """
     parsed = [tcparse.parse_terachem_output(s) for s in tc_stdouts]
 
@@ -77,19 +109,26 @@ def restart_terachem_optimization_from_latest(
     # extract key items that must be removed or passed back in
     # pop(..., None) because we may not have constraints and make_terachem_input can deal with None constraints
     job_constraint_lists = [
-        job_args[i].pop("constraints", None) for i in range(len(job_args))
+        job_args[i].pop("constraints", []) for i in range(len(job_args))
     ]
     old_scrdirs = [k.pop("scrdir") for k in job_args]
     # pop old coordinates
-    _ = [k.pop("coordinates") for k in job_args]
+    old_coordinates = [k.pop("coordinates") for k in job_args]
 
     # get final structures -- assume either optim.rst7 or optim.xyz
     # if optim.rst7 exists, use that.
     # if optim.xyz, parse it and grab final geometry from that.
     latest_geometries = []
-    for d in old_scrdirs:
+    for i, d in enumerate(old_scrdirs):
         xyz_storage_dir = os.path.join(new_workdir, "latest_xyzs")
-        latest = get_latest_structure(d, xyz_storage_dir)
+        old_crds = old_coordinates[i]
+        latest = get_latest_structure(
+            d,
+            xyz_storage_dir,
+            empty_optim_xyz_ok=empty_optim_xyz_ok,
+            old_input_crds=old_crds,
+            clobber=clobber,
+        )
         latest_geometries.append(latest)
 
     #####

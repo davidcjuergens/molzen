@@ -1186,11 +1186,26 @@ class Molecule(Mapping[str, Any]):
             sliced_records.append(new_record)
         return sliced_records
 
-    def __getitem__(self, key: str | slice) -> Any:
-        """Get a molecule property by key OR return a Molecule() with data at selected frames if key is a slice."""
-        # Treat slice syntax as frame selection before mapping-style access.
+    def __getitem__(self, key: str | int | slice) -> Any:
+        """Get a molecule property by key OR return a Molecule() with selected frames."""
+        # Treat slice and integer syntax as frame selection before mapping-style access.
         if isinstance(key, slice):
             return self.slice_frames(key)
+
+        # single frame selection with integer index
+        if isinstance(key, (int, np.integer)) and not isinstance(key, bool):
+            if self._atom_records is None:
+                raise ValueError("No atom_records available to slice.")
+            frame_index = int(key)
+            n_frames = self._frame_count(self._atom_records)
+            # get the positive frame index equivalent to the negative index
+            if frame_index < 0:
+                frame_index += n_frames
+            if frame_index < 0 or frame_index >= n_frames:
+                raise IndexError(
+                    f"Frame index {key} out of range for {n_frames} frame(s)."
+                )
+            return self.slice_frames(frame_index, frame_index + 1)
 
         # Keep string-key lookups compatible with the Mapping interface.
         if key == "metadata":
@@ -1466,6 +1481,13 @@ class Molecule(Mapping[str, Any]):
         frame: int | None = None,
         start: int | None = None,
         end: int | None = None,
+        export_controls: bool = False,
+        gif_delay_ms: int = 120,
+        gif_total_time: float | None = None,
+        gif_bounce: bool = False,
+        png_scale: float = 2.0,
+        atom_hover_labels: bool = True,
+        atom_hover_duration: float = 0.25,
     ) -> Any:
         """Return a py3Dmol view for the molecule.
 
@@ -1475,6 +1497,18 @@ class Molecule(Mapping[str, Any]):
             frame: Optional frame index to show from the displayed frame range.
             start: Optional first frame index to include.
             end: Optional frame index at which to stop, exclusive.
+            export_controls: Whether to add browser-side GIF export controls for
+                multi-frame views.
+            gif_delay_ms: Delay between exported GIF frames in milliseconds.
+            gif_total_time: Total exported GIF duration in seconds. When provided,
+                this overrides gif_delay_ms.
+            gif_bounce: Whether exported GIF frames should play forward and then
+                backward to the first frame.
+            png_scale: Pixel scale for PNG and clipboard exports. A value of 2.0
+                exports twice the notebook display dimensions.
+            atom_hover_labels: Whether atoms should show their name and molecule
+                index when hovered.
+            atom_hover_duration: Delay in seconds before atom hover labels appear.
         """
 
         # optional dependency, so lazy import
@@ -1483,12 +1517,24 @@ class Molecule(Mapping[str, Any]):
         mol = self if start is None and end is None else self.slice_frames(start, end)
         width_str = f"{width}px" if isinstance(width, int) else width
         height_str = f"{height}px" if isinstance(height, int) else height
-        return show_molecule(mol, width=width_str, height=height_str, frame=frame)
+        return show_molecule(
+            mol,
+            width=width_str,
+            height=height_str,
+            frame=frame,
+            export_controls=export_controls,
+            gif_delay_ms=gif_delay_ms,
+            gif_total_time=gif_total_time,
+            gif_bounce=gif_bounce,
+            png_scale=png_scale,
+            atom_hover_labels=atom_hover_labels,
+            atom_hover_duration=atom_hover_duration,
+        )
 
     @classmethod
-    def from_xyz(cls, file_path: str) -> Molecule:
+    def from_xyz(cls, file_path: str, **kwargs) -> Molecule:
         """Load a molecule from an XYZ file path."""
-        payload = xyz_io.parse_xyz(file_path)
+        payload = xyz_io.parse_xyz(file_path, **kwargs)
         return cls(_legacy_view="xyz", **payload)
 
     def to_xyz(self, file_path: str, return_str: bool = False) -> str | None:
