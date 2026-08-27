@@ -3,6 +3,7 @@
 import math
 import os
 
+import numpy as np
 import pytest
 
 from molzen.io.terachem.parse import parse_terachem_output
@@ -164,6 +165,65 @@ def test_parse_final_excited_state_results_infers_multiplicity_from_s_squared():
     records = parsed["excited_state_records"]
     assert records[0]["multiplicity"] == "singlet"
     assert records[1]["multiplicity"] == "triplet"
+
+
+def test_parse_gradient_run_adds_energy_gradient_record():
+    raw = """
+Processed Input file:
+ coordinates geometry.xyz
+ run gradient
+ cistarget 2
+---------------------
+Gradient units are Hartree/Bohr
+--------------------------------------------------
+          dE/dX          dE/dY          dE/dZ
+      0.100000      -0.200000       0.300000
+     -0.400000       0.500000      -0.600000
+--------------------------------------------------
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    records = parsed["excited_state_records"]
+    assert len(records) == 1
+    assert records[0]["source"] == "parse_gradient_section"
+    assert records[0]["section_idx"] == 0
+    assert records[0]["state_i"] == 0
+    assert records[0]["state_j"] == 2
+    np.testing.assert_allclose(
+        records[0]["energy_gradient"],
+        [[0.1, -0.2, 0.3], [-0.4, 0.5, -0.6]],
+    )
+    assert records[0]["nonadiabatic_coupling"] is None
+
+
+def test_parse_coupling_run_adds_nonadiabatic_coupling_record():
+    raw = """
+Processed Input file:
+ coordinates geometry.xyz
+ run coupling
+ nacstate1 1
+ nacstate2 3
+---------------------
+Gradient units are Hartree/Bohr
+--------------------------------------------------
+          dE/dX          dE/dY          dE/dZ
+      0.010000       0.020000       0.030000
+     -0.010000      -0.020000      -0.030000
+--------------------------------------------------
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    records = parsed["excited_state_records"]
+    assert len(records) == 1
+    assert records[0]["source"] == "parse_gradient_section"
+    assert records[0]["section_idx"] == 0
+    assert records[0]["state_i"] == 1
+    assert records[0]["state_j"] == 3
+    assert records[0]["energy_gradient"] is None
+    np.testing.assert_allclose(
+        records[0]["nonadiabatic_coupling"],
+        [[0.01, 0.02, 0.03], [-0.01, -0.02, -0.03]],
+    )
 
 
 def test_parse_casscf_orbitals_without_occupations(tmp_path):

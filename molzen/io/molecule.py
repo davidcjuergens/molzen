@@ -1810,7 +1810,7 @@ class Molecule(Mapping[str, Any]):
                 stdout_dir,
                 scrdir=scrdir,
             )
-        elif runtype in ("energy", "gradient"):
+        elif runtype in ("energy", "gradient", "coupling"):
             structure_path = cls._resolve_terachem_path(
                 inputs["coordinates"],
                 stdout_dir,
