@@ -22,6 +22,8 @@ STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
     "T_mag": np.nan,
     "s_squared": np.nan,
     "max_ci_coeff": np.nan,
+    "energy_gradient": None,
+    "nonadiabatic_coupling": None,
 }
 
 _MULTIPLICITY_NAMES = {
@@ -100,6 +102,21 @@ def is_casscf_like_excited_state_header(myline: str) -> bool:
     return all(token in normalized for token in required_tokens)
 
 
+#### Some constants ####
+INPUT_ARGS_HEADER = "Processed Input file:"
+SCF_ENERGY_HEADER = "FINAL ENERGY:"
+EXCITED_STATES_RESULTS_HEADER = "Final Excited State Results"
+CASSCF_SINGLET_TRANSITION_DIPOLE_HEADER = "Singlet state electronic transitions:"
+CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER = "Triplet state electronic transitions:"
+CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
+EOMCCSD_ENERGIES_HEADER = "====> EOM-CCSD Energies <===="
+EOMCCSD_TRANSITION_PROPERTIES_HEADER = "====> EOM-CCSD Transition Properties <===="
+GRADIENT_HEADER = "Gradient units are Hartree/Bohr"
+
+MINIMIZE_CONVERGED_HEADER = "Converged!"
+#### End constants ####
+
+
 def parse_terachem_output(
     file_path: str,
     custom_section_parsers: Union[None, dict] = None,
@@ -115,18 +132,6 @@ def parse_terachem_output(
             and callable is a function that takes (lines, start_idx) and returns (section_dict, end_idx).
         raw_str_in (bool, optional): If True, file_path is treated as raw string input rather than a file path.
     """
-    #### Some constants ####
-    INPUT_ARGS_HEADER = "Processed Input file:"
-    SCF_ENERGY_HEADER = "FINAL ENERGY:"
-    EXCITED_STATES_RESULTS_HEADER = "Final Excited State Results"
-    CASSCF_SINGLET_TRANSITION_DIPOLE_HEADER = "Singlet state electronic transitions:"
-    CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER = "Triplet state electronic transitions:"
-    CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
-    EOMCCSD_ENERGIES_HEADER = "====> EOM-CCSD Energies <===="
-    EOMCCSD_TRANSITION_PROPERTIES_HEADER = "====> EOM-CCSD Transition Properties <===="
-
-    MINIMIZE_CONVERGED_HEADER = "Converged!"
-    #### End constants ####
 
     if not raw_str_in:
         with open(file_path, "r") as tc_file:
@@ -309,6 +314,38 @@ def parse_terachem_output(
                 out["eomccsd_transition_dipoles"].append(eomccsd_transition_data)
             continue
 
+        ### Gradients
+        if GRADIENT_HEADER in line:
+            gradient_data, i = parse_gradient_section(lines, start=i)
+            input_args = out.get("input_args", {})
+            run_type = str(input_args.get("run", "")).strip().lower()
+            section_idx = sum(
+                record["source"] == "parse_gradient_section"
+                for record in standardized_excited_records
+            )
+
+            if run_type == "gradient":
+                standardized_excited_records.append(
+                    make_standardized_excited_record(
+                        source="parse_gradient_section",
+                        section_idx=section_idx,
+                        state_i=0,
+                        state_j=int(input_args["cistarget"]),
+                        energy_gradient=gradient_data["gradient"],
+                    )
+                )
+            elif run_type == "coupling":
+                standardized_excited_records.append(
+                    make_standardized_excited_record(
+                        source="parse_gradient_section",
+                        section_idx=section_idx,
+                        state_i=int(input_args["nacstate1"]),
+                        state_j=int(input_args["nacstate2"]),
+                        nonadiabatic_coupling=gradient_data["gradient"],
+                    )
+                )
+            continue
+
         # CUSTOM SECTION PARSERS
         if custom_section_parsers is not None:
             parsed_custom = False
@@ -477,6 +514,31 @@ def postprocess_casscf_energies(out):
                 )
 
     out["casscf_energies"] = o
+
+
+def parse_gradient_section(lines: list, start: int) -> tuple[dict, int]:
+    """Parse a gradient section from terachem output.
+    Note: This could be a state energy gradient, or it could be a NAC vector..
+    """
+    assert GRADIENT_HEADER in lines[start]
+    assert "------" in lines[start + 1]
+    assert "dE/dX" in lines[start + 2]
+
+    x, y, z = [], [], []
+    j = start + 3
+
+    def check_end(myline):
+        return "------" in myline  # the end of the grad section seems to have ---
+
+    while not check_end(lines[j]):
+        parts = lines[j].strip().split()
+        x.append(float(parts[0]))
+        y.append(float(parts[1]))
+        z.append(float(parts[2]))
+        j += 1
+
+    grad = np.array([x, y, z]).T
+    return {"gradient": grad}, j
 
 
 def parse_eomccsd_energies(
