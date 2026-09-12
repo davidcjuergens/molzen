@@ -9,6 +9,7 @@ import os
 
 from molzen.amino_acids import aa2long, aa2num, aa_1_to_3, ncaas, oneletter_code
 from molzen.ptable import symbol_to_z
+from molzen.io.orca.parse import parse_orca_output
 from molzen.io.terachem.parse import parse_terachem_output
 from . import dcd as dcd_io
 from . import hdf5 as hdf5_io
@@ -1744,6 +1745,32 @@ class Molecule(Mapping[str, Any]):
     def to_hdf5(self, file_path: str) -> None:
         """Write this molecule to HDF5 format."""
         hdf5_io.write_hdf5(file_path, self._legacy_serialization_payload())
+
+    @classmethod
+    def from_orca_stdout(cls, file_path: str | os.PathLike[str]) -> Molecule:
+        """Load a molecule from an ORCA stdout file path.
+
+        Args:
+            file_path: Path to an ORCA stdout file. Coordinates and results are
+                read directly from stdout; no companion files are required.
+
+        Returns:
+            Molecule: Molecule with elements and Angstrom coordinates from each
+                printed coordinate block. xyz has shape (n_atoms, 3) for one
+                frame or (n_frames, n_atoms, 3) for multiple frames. Spin
+                multiplicity is stored in spinmult; charge, termination status,
+                and units are stored in metadata["orca"]. Final single-point
+                energies (Hartree) and Cartesian gradients (Hartree/Bohr), when
+                present, are stored in excited_state_records under
+                total_energy_au and energy_gradient. Each record's frame_index
+                refers to the preceding geometry.
+
+        Notes:
+            Repeated results for a frame use the last printed value. Missing
+            results are left unset, allowing unfinished jobs to be read. No
+            electronic state is inferred, and excited-state tables are not parsed.
+        """
+        return cls(_legacy_view="xyz", **parse_orca_output(file_path))
 
     @classmethod
     def from_terachem_stdout(
