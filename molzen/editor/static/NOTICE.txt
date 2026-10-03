@@ -1,0 +1,8 @@
+3Dmol.js 2.5.4, distributed unmodified.
+Source: https://cdn.jsdelivr.net/npm/3dmol@2.5.4/build/3Dmol-min.js
+SHA-256: 1297081865a4d6c0b2ac22d3e909724da8c03ba0caf7bfc78c8a3d9d8b143f4e
+License: 3Dmol-LICENSE; bundled notices: 3Dmol-min.js.LICENSE.txt
+
+The Python widget wraps this UMD bundle in a module-local scope at load time.
+To update, replace the pinned distribution and accompanying licenses, update
+this notice, then test the widget in a notebook and build the wheel.

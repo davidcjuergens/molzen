@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from molzen.bonds import BondGraph
 
 from molzen.amino_acids import aa2long, aa2num, aa_1_to_3, ncaas, num2aa, oneletter_code
 from molzen.ptable import ALL_SYMBOLS
@@ -200,13 +201,38 @@ def parse_pdb(pdb_fp: str) -> dict[str, Any]:
     metadata = {
         "pdb_raw_lines": raw_lines,
         "pdb_records": np.array(pdb_records, dtype=PDB_RECORD_DTYPES),
+        "pdb_model_count": sum(line.startswith("MODEL ") for line in raw_lines),
     }
+
+    connectivity = [line for line in raw_lines if line.startswith("CONECT")]
+    bonds = None
+    if connectivity:
+        serial_map = {int(row["serial"]): i for i, row in enumerate(pdb_records)}
+        if len(serial_map) != len(pdb_records):
+            raise ValueError(
+                "PDB connectivity requires unique atom serials; select one model first."
+            )
+        edges = set()
+        for line in connectivity:
+            try:
+                serials = [
+                    int(line[i : i + 5])
+                    for i in range(6, len(line.rstrip()), 5)
+                    if line[i : i + 5].strip()
+                ]
+                a = serial_map[serials[0]]
+                for serial in serials[1:]:
+                    edges.add(tuple(sorted((a, serial_map[serial]))))
+            except (IndexError, KeyError, ValueError) as exc:
+                raise ValueError(f"Invalid PDB connectivity: {line.strip()}") from exc
+        bonds = BondGraph([(a, b, "unknown", "imported") for a, b in edges])
 
     return {
         "xyz": np.array(xyz, dtype=float),
         "seq": "".join(seq),
         "hetatm": np.array(hetatm_data, dtype=HETATM_DTYPES),
         "metadata": metadata,
+        "bonds": bonds,
     }
 
 
@@ -319,4 +345,99 @@ def write_pdb(
 
     with open(file_path, "w") as f:
         f.write(outstr)
+    return None
+
+
+def write_atom_records(
+    file_path: str,
+    atom_records: np.ndarray | None,
+    *,
+    bonds: BondGraph | None = None,
+    chains: list[str] | None = None,
+    return_str: bool = False,
+) -> str | None:
+    """Write canonical atoms and connectivity without residue templates.
+
+    Args:
+        file_path: Destination PDB file.
+        atom_records: Single-frame canonical records, including edited atoms.
+        bonds: Explicit connectivity. PDB output preserves edges, not orders.
+        chains: Optional replacement chain IDs for polymer residues in order.
+        return_str: Return text instead of writing a file.
+
+    Returns:
+        PDB text when requested, otherwise None.
+    """
+    if atom_records is None or atom_records.dtype["coords"].shape[0] != 1:
+        raise ValueError("PDB output requires single-frame atom_records.")
+    if len(atom_records) > 99999:
+        raise ValueError("PDB supports at most 99999 atom serials.")
+    if not np.isfinite(atom_records["coords"]).all():
+        raise ValueError("PDB coordinates must be finite.")
+    residues = list(
+        dict.fromkeys(
+            int(r["residue_index"]) for r in atom_records if r["record_name"] == "ATOM"
+        )
+    )
+    if chains is not None and len(chains) != len(residues):
+        raise ValueError("chains must match the polymer residue count.")
+    chain_map = {} if chains is None else dict(zip(residues, chains, strict=True))
+    lines = []
+    serial_map = {}
+    for serial, row in enumerate(atom_records, start=1):
+        serial_map[int(row["atom_index"])] = serial
+        element = str(row["element"])
+        name = str(row["atom_name"]).strip() or f"{element}{serial}"
+        # One-letter elements occupy columns 14 onward in short PDB names.
+        name_field = (
+            f" {name:<3}"
+            if len(element) == 1 and len(name) < 4 and not name[:1].isdigit()
+            else f"{name:<4}"
+        )
+        residue = str(row["res_name"]).strip() or "MOL"
+        chain = str(chain_map.get(int(row["residue_index"]), row["chain_id"]))
+        res_num = int(row["res_num"])
+        if (
+            len(name) > 4
+            or len(residue) > 3
+            or len(chain) > 1
+            or not -999 <= res_num <= 9999
+        ):
+            raise ValueError("Atom/residue identifiers do not fit PDB field widths.")
+        xyz = [f"{float(c):8.3f}" for c in row["coords"][0]]
+        if any(len(c) != 8 for c in xyz):
+            raise ValueError("Coordinates do not fit PDB field widths.")
+        occupancy = float(row["occupancy"]) if np.isfinite(row["occupancy"]) else 1.0
+        temperature = (
+            float(row["temp_factor"]) if np.isfinite(row["temp_factor"]) else 0.0
+        )
+        if len(f"{occupancy:6.2f}") > 6 or len(f"{temperature:6.2f}") > 6:
+            raise ValueError("Occupancy or temperature does not fit PDB field widths.")
+        record = str(row["record_name"]) or "HETATM"
+        lines.append(
+            f"{record:<6}{serial:5d} {name_field}{row['alt_loc']:1}{residue:>3} {chain:1}"
+            f"{res_num:4d}{row['i_code']:1}   {''.join(xyz)}"
+            f"{occupancy:6.2f}{temperature:6.2f}          {element:>2}{row['charge']:>2}\n"
+        )
+    if bonds is not None:
+        bonds.validate(atom_records["atom_index"])
+        adjacency: dict[int, list[int]] = {}
+        for edge in bonds.records:
+            a, b = serial_map[int(edge["a"])], serial_map[int(edge["b"])]
+            adjacency.setdefault(a, []).append(b)
+            adjacency.setdefault(b, []).append(a)
+        for serial, neighbors in sorted(adjacency.items()):
+            neighbors.sort()
+            for start in range(0, len(neighbors), 4):
+                lines.append(
+                    f"CONECT{serial:5d}"
+                    + "".join(f"{n:5d}" for n in neighbors[start : start + 4])
+                    + "\n"
+                )
+    lines.append("END\n")
+    text = "".join(lines)
+    if return_str:
+        return text
+    with open(file_path, "w") as stream:
+        stream.write(text)
     return None

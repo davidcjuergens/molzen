@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from molzen.ptable import ALL_SYMBOLS
+from molzen.bonds import BondGraph
 
 MOL2_HETATM_DTYPES = np.dtype(
     [
@@ -48,7 +49,7 @@ def parse_mol2(mol2_fp: str) -> dict[str, Any]:
     for line_no, raw_line in enumerate(lines, start=1):
         line = raw_line.strip()
 
-        if not line:
+        if not line or line.startswith("#"):
             continue
         if line.startswith("@<TRIPOS>ATOM"):
             in_atom_section = True
@@ -76,9 +77,9 @@ def parse_mol2(mol2_fp: str) -> dict[str, Any]:
         except ValueError as exc:
             raise ValueError(f"Invalid MOL2 atom line {line_no}.") from exc
 
-        element = _infer_element_from_atom_name(atom_name)
-        if not element:
-            element = atom_type.split(".")[0].capitalize()
+        element = atom_type.split(".")[0].capitalize()
+        if element not in _ELEMENT_SYMBOLS:
+            element = _infer_element_from_atom_name(atom_name)
         res_name = split[7] if len(split) > 7 else ""
 
         het = np.array(
@@ -95,11 +96,43 @@ def parse_mol2(mol2_fp: str) -> dict[str, Any]:
     atom_names = hetatm["atom_name"].tolist() if hetatm.size else []
     elements = hetatm["element"].tolist() if hetatm.size else []
 
+    atom_map = {int(row["atom_idx"]): i for i, row in enumerate(hetatm)}
+    if len(atom_map) != len(hetatm):
+        raise ValueError("MOL2 atom IDs must be unique.")
+    bond_rows = []
+    in_bonds = False
+    saw_bonds = False
+    for line in lines:
+        if line.startswith("@<TRIPOS>"):
+            in_bonds = line.strip() == "@<TRIPOS>BOND"
+            saw_bonds |= in_bonds
+        elif in_bonds and line.strip() and not line.lstrip().startswith("#"):
+            fields = line.split()
+            try:
+                bond_rows.append(
+                    (
+                        atom_map[int(fields[1])],
+                        atom_map[int(fields[2])],
+                        fields[3],
+                        "imported",
+                    )
+                )
+            except (IndexError, KeyError, ValueError) as exc:
+                raise ValueError(f"Invalid MOL2 bond record: {line.strip()}") from exc
+
     return {
         "xyz": xyz,
         "atom_names": atom_names,
         "elements": elements,
         "hetatm": hetatm,
+        "bonds": BondGraph(
+            bond_rows,
+            status="partial"
+            if "# MOLZEN_BOND_STATUS partial\n" in lines
+            else "complete",
+        )
+        if saw_bonds
+        else None,
     }
 
 
@@ -110,6 +143,9 @@ def write_mol2(
     elements: list[str] | None = None,
     hetatm: np.ndarray | None = None,
     return_str: bool = False,
+    *,
+    bonds: BondGraph | None = None,
+    atom_ids: list[int] | None = None,
 ) -> str | None:
     """Write MOL2 text to disk or return it as a string."""
     atom_lines: list[str] = []
@@ -123,7 +159,7 @@ def write_mol2(
 
         for row in hetatm:
             atom_idx = int(row["atom_idx"])
-            atom_name = str(row["atom_name"])
+            atom_name = str(row["atom_name"]).strip() or f"{row['element']}{atom_idx}"
             atom_type = str(row["atom_type"])
             element = str(row["element"])
             res_name = str(row["res_name"]) or "MOL"
@@ -161,16 +197,39 @@ def write_mol2(
             )
 
     natoms = len(atom_lines)
+    bond_lines = []
+    if bonds is not None:
+        ids = list(range(natoms)) if atom_ids is None else atom_ids
+        if len(ids) != natoms:
+            raise ValueError("atom_ids must match the atom count.")
+        bonds.validate(ids)
+        serials = [int(line.split()[0]) for line in atom_lines]
+        if len(set(serials)) != natoms:
+            raise ValueError("MOL2 output atom IDs must be unique.")
+        serial_map = dict(zip(ids, serials, strict=True))
+        for i, edge in enumerate(bonds.records, start=1):
+            if edge["order"] in ("4", "dative", "complex", "ionic"):
+                raise ValueError(
+                    f"MOL2 cannot represent bond type {edge['order']!r}; use NPY or HDF5."
+                )
+            order = "un" if edge["order"] == "unknown" else str(edge["order"])
+            bond_lines.append(
+                f"{i:6d} {serial_map[int(edge['a'])]:6d} {serial_map[int(edge['b'])]:6d} {order}\n"
+            )
     out = [
         "@<TRIPOS>MOLECULE\n",
         "MOLZEN\n",
-        f"{natoms} 0 0 0 0\n",
+        f"{natoms} {len(bond_lines)} 0 0 0\n",
         "SMALL\n",
         "NO_CHARGES\n",
         "\n",
         "@<TRIPOS>ATOM\n",
         *atom_lines,
     ]
+    if bonds is not None:
+        out.extend(
+            [f"# MOLZEN_BOND_STATUS {bonds.status}\n", "@<TRIPOS>BOND\n", *bond_lines]
+        )
     outstr = "".join(out)
 
     if return_str:

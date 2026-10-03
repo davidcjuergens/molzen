@@ -7,6 +7,7 @@ from urllib.request import urlopen
 import numpy as np
 
 from molzen.ptable import z_to_symbol
+from molzen.bonds import BondGraph
 
 
 def fetch_pubchem(cid: int | str, *, timeout: float = 30.0) -> dict:
@@ -63,6 +64,29 @@ def fetch_pubchem(cid: int | str, *, timeout: float = 30.0) -> dict:
             raise ValueError("Inconsistent atoms or coordinates.")
         indices = {aid: i for i, aid in enumerate(coord_ids)}
         xyz = xyz[[indices[aid] for aid in atom_ids]]
+        bonds = None
+        if "bonds" in compound:
+            data = compound["bonds"]
+            atom_map = {aid: i for i, aid in enumerate(atom_ids)}
+            orders = {
+                1: "1",
+                2: "2",
+                3: "3",
+                4: "4",
+                5: "dative",
+                6: "complex",
+                7: "ionic",
+                255: "unknown",
+            }
+            bonds = BondGraph(
+                [
+                    (atom_map[a], atom_map[b], orders[order], "imported")
+                    for a, b, order in zip(
+                        data["aid1"], data["aid2"], data["order"], strict=True
+                    )
+                ],
+                status="complete",
+            )
     except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
         raise ValueError(
             f"Invalid PubChem 3D structure response for CID {cid}."
@@ -73,4 +97,5 @@ def fetch_pubchem(cid: int | str, *, timeout: float = 30.0) -> dict:
         "elements": elements,
         "comments": [f"PubChem CID {cid} (3D)"],
         "metadata": {"pubchem_cid": cid, "pubchem_url": url},
+        "bonds": bonds,
     }

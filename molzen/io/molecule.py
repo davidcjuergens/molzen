@@ -9,6 +9,7 @@ import os
 
 from molzen.amino_acids import aa2long, aa2num, aa_1_to_3, ncaas, oneletter_code
 from molzen.ptable import symbol_to_z
+from molzen.bonds import BondGraph, BondSuggestions, infer_bonds
 from molzen.io.orca.parse import parse_orca_output
 from molzen.io.terachem.parse import parse_terachem_output
 from . import dcd as dcd_io
@@ -96,6 +97,7 @@ class Molecule(Mapping[str, Any]):
         "seq",
         "hetatm",
         "excited_state_records",
+        "bonds",
     )
 
     def __init__(
@@ -111,6 +113,7 @@ class Molecule(Mapping[str, Any]):
         atom_records: np.ndarray | None = None,
         excited_state_records: list[dict[str, Any]] | None = None,
         _legacy_view: str | None = None,
+        bonds: BondGraph | dict | None = None,
     ) -> None:
 
         self._legacy_view = _legacy_view or self._infer_legacy_view(
@@ -124,6 +127,7 @@ class Molecule(Mapping[str, Any]):
         )
 
         self._atom_records: np.ndarray | None = None
+        self._bonds: BondGraph | None = None
         self._comments: list[str] | None = None
         self._spinmult: int | None = None
         self._metadata: dict[str, Any] = {}
@@ -146,6 +150,12 @@ class Molecule(Mapping[str, Any]):
             )
             self._set_atom_records(records)
         self.metadata = {} if metadata is None else metadata
+        # Loading connectivity should preserve untouched raw-file metadata.
+        self._bonds = BondGraph(**bonds) if isinstance(bonds, dict) else bonds
+        if self._bonds is not None:
+            self._bonds.validate(
+                [] if self.atom_records is None else self.atom_records["atom_index"]
+            )
 
     def _infer_legacy_view(
         self,
@@ -182,12 +192,15 @@ class Molecule(Mapping[str, Any]):
     def _set_atom_records(self, atom_records: np.ndarray) -> None:
         """Validate and store canonical atom records."""
         records = self._coerce_atom_records(atom_records)
+        if self._bonds is not None:
+            self._bonds.validate(records["atom_index"])
         if self._comments is not None and len(self._comments) != self._frame_count(
             records
         ):
             raise ValueError("comments length must match number of coordinate frames.")
         self._validate_excited_state_frame_indices(self._frame_count(records))
         self._atom_records = records
+        self._clear_stale_pdb_metadata()
 
     def _validate_excited_state_frame_indices(self, n_frames: int) -> None:
         """Validate frame-aligned excited-state records against coordinate frames."""
@@ -228,6 +241,8 @@ class Molecule(Mapping[str, Any]):
             raise ValueError("No atom_records available to pop.")
 
         removed = self._atom_records[idx].copy()
+        if self._bonds is not None:
+            self._bonds = self._bonds.without_atoms([int(removed["atom_index"])])
         self._atom_records = np.delete(self._atom_records, idx, axis=0)
         self._clear_stale_pdb_metadata()
         return removed
@@ -698,6 +713,10 @@ class Molecule(Mapping[str, Any]):
         legacy_view: str | None = None,
     ) -> None:
         """Rebuild atom_records from a legacy compatibility view."""
+        if self.bonds is not None:
+            raise ValueError(
+                "Rebuilding legacy atom layouts would lose stable bond IDs; edit atom_records instead."
+            )
         target_view = legacy_view or self._legacy_view
 
         if target_view == "pdb":
@@ -869,6 +888,17 @@ class Molecule(Mapping[str, Any]):
 
     def _legacy_serialization_payload(self) -> dict[str, Any]:
         """Build the old dict payload expected by NPY and HDF5 writers."""
+        if self.bonds is not None or self.metadata.get("molzen_edit"):
+            # Canonical records retain atom IDs and edited residue information.
+            return {
+                "atom_records": self.atom_records,
+                "bonds": None if self.bonds is None else self.bonds.to_dict(),
+                "comments": self.comments,
+                "spinmult": self.spinmult,
+                "metadata": self.metadata,
+                "excited_state_records": self.excited_state_records,
+                "_legacy_view": self._legacy_view,
+            }
         payload: dict[str, Any] = {}
         if self._legacy_view == "pdb":
             pdb_view = self._legacy_pdb_view()
@@ -972,6 +1002,7 @@ class Molecule(Mapping[str, Any]):
             metadata=metadata,
             excited_state_records=excited_state_records,
             _legacy_view=self._legacy_view,
+            bonds=self.bonds,
         )
 
     def _slice_metadata(self, selected_frame_indices: np.ndarray) -> dict[str, Any]:
@@ -1054,6 +1085,7 @@ class Molecule(Mapping[str, Any]):
             metadata=metadata,
             excited_state_records=excited_state_records,
             _legacy_view=first._legacy_view,
+            bonds=first.bonds,
         )
 
     @classmethod
@@ -1067,6 +1099,10 @@ class Molecule(Mapping[str, Any]):
         """Validate that two molecules can be concatenated framewise."""
         first_records = first.atom_records
         other_records = other.atom_records
+        first_bonds = None if first.bonds is None else first.bonds.to_dict()
+        other_bonds = None if other.bonds is None else other.bonds.to_dict()
+        if first_bonds != other_bonds:
+            raise ValueError("Cannot concatenate molecules with different bond graphs.")
         if first_records is None or other_records is None:
             raise ValueError("All molecules must have atom_records.")
         if len(first_records) != len(other_records):
@@ -1286,6 +1322,40 @@ class Molecule(Mapping[str, Any]):
         return f"Molecule({', '.join(parts)})"
 
     @property
+    def bonds(self) -> BondGraph | None:
+        """Explicit connectivity, or None if connectivity has not been supplied."""
+        return self._bonds
+
+    @bonds.setter
+    def bonds(self, value: BondGraph | None) -> None:
+        if value is not None:
+            value.validate(
+                [] if self.atom_records is None else self.atom_records["atom_index"]
+            )
+        self._bonds = value
+        self._clear_stale_pdb_metadata()
+
+    def infer_bonds(
+        self, *, frame: int = 0, tolerance: float = 0.35
+    ) -> BondSuggestions:
+        """Suggest new bonds without modifying the molecule.
+
+        Args:
+            frame: Coordinate frame used for distance comparisons.
+            tolerance: Additive covalent-radius tolerance in angstroms.
+
+        Returns:
+            Candidate bonds with unknown orders and diagnostic messages.
+        """
+        if self.atom_records is None:
+            raise ValueError("No atom_records available for bond inference.")
+        if self.metadata.get("pdb_model_count", 0) > 1:
+            raise ValueError("Select one PDB MODEL before inferring connectivity.")
+        return infer_bonds(
+            self.atom_records, frame=frame, existing=self.bonds, tolerance=tolerance
+        )
+
+    @property
     def atom_records(self) -> np.ndarray | None:
         return self._atom_records
 
@@ -1293,6 +1363,8 @@ class Molecule(Mapping[str, Any]):
     def atom_records(self, value: np.ndarray | None) -> None:
         if value is None:
             self._atom_records = None
+            self._bonds = None
+            self._clear_stale_pdb_metadata()
             return
         self._set_atom_records(value)
 
@@ -1375,6 +1447,12 @@ class Molecule(Mapping[str, Any]):
 
     @atom_names.setter
     def atom_names(self, value: list[str] | None) -> None:
+        if self.atom_records is not None:
+            if value is not None and len(value) != len(self.atom_records):
+                raise ValueError("atom_names must match the atom count.")
+            self.atom_records["atom_name"] = "" if value is None else value
+            self._clear_stale_pdb_metadata()
+            return
         self._update_from_legacy(atom_names=value, legacy_view="mol2")
 
     @property
@@ -1388,6 +1466,16 @@ class Molecule(Mapping[str, Any]):
 
     @elements.setter
     def elements(self, value: list[str] | None) -> None:
+        if self.atom_records is not None:
+            if value is not None and (
+                len(value) != len(self.atom_records)
+                or any(e not in symbol_to_z for e in value)
+            ):
+                raise ValueError("elements must contain a valid symbol for each atom.")
+            self.atom_records["element"] = "" if value is None else value
+            self.atom_records["atom_type"] = ""
+            self._clear_stale_pdb_metadata()
+            return
         target_view = "mol2" if self._legacy_view == "mol2" else "xyz"
         self._update_from_legacy(elements=value, legacy_view=target_view)
 
@@ -1490,6 +1578,7 @@ class Molecule(Mapping[str, Any]):
         png_scale: float = 2.0,
         atom_hover_labels: bool = True,
         atom_hover_duration: float = 0.25,
+        edit: bool = False,
     ) -> Any:
         """Return a py3Dmol view for the molecule.
 
@@ -1511,7 +1600,17 @@ class Molecule(Mapping[str, Any]):
             atom_hover_labels: Whether atoms should show their name and molecule
                 index when hovered.
             atom_hover_duration: Delay in seconds before atom hover labels appear.
+            edit: Open an optional anywidget editor on a copy of one frame.
+                Multi-frame molecules require an explicit frame selection.
         """
+
+        if edit:
+            from molzen.editor import MoleculeEditor
+
+            mol = (
+                self if start is None and end is None else self.slice_frames(start, end)
+            )
+            return MoleculeEditor(mol, frame=frame, width=width, height=height)
 
         # optional dependency, so lazy import
         from molzen.visualize import show_molecule
@@ -1603,16 +1702,11 @@ class Molecule(Mapping[str, Any]):
                 return_str=return_str,
             )
 
-        pdb_view = self._legacy_pdb_view()
-        pdb_xyz = pdb_view["polymer_xyz"]
-        seq_tokens = pdb_view["seq_tokens"]
-        pdb_chains = chains if chains is not None else pdb_view["chains"]
-        return pdb_io.write_pdb(
+        return pdb_io.write_atom_records(
             file_path,
-            xyz=pdb_xyz,
-            seq=seq_tokens,
-            chains=pdb_chains,
-            hetatm=pdb_view["hetatm"] if len(pdb_view["hetatm"]) else None,
+            self.atom_records,
+            bonds=self.bonds,
+            chains=chains,
             return_str=return_str,
         )
 
@@ -1631,6 +1725,10 @@ class Molecule(Mapping[str, Any]):
             elements=None,
             hetatm=self._legacy_mol2_hetatm(),
             return_str=return_str,
+            bonds=self.bonds,
+            atom_ids=None
+            if self.atom_records is None
+            else self.atom_records["atom_index"].tolist(),
         )
 
     @classmethod
