@@ -1,0 +1,26 @@
+.molzen-editor { max-width: 100%; font: 13px system-ui, sans-serif; color: #263238; background: #fff; border: 1px solid #ccd3d8; border-radius: 6px; overflow: hidden; }
+.molzen-editor .mz-viewport { position: relative; width: 100%; min-height: 220px; }
+.molzen-editor .mz-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+.molzen-editor .mz-controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px; border-top: 1px solid #dde2e6; }
+.molzen-editor label { display: inline-flex; align-items: center; gap: 5px; }
+.molzen-editor .mz-controls > label { align-items: flex-start; flex-direction: column; }
+.molzen-editor button, .molzen-editor select, .molzen-editor input { font: inherit; color: inherit; background: #fff; border: 1px solid #b9c3ca; border-radius: 4px; padding: 4px 7px; }
+.molzen-editor button { cursor: pointer; }
+.molzen-editor button:disabled { opacity: .45; cursor: default; }
+.molzen-editor button:hover:enabled { background: #e9f1f6; }
+.molzen-editor button.mz-accent-green { background: #e5f6ec; border-color: #7dcea0; }
+.molzen-editor button.mz-accent-green:hover:enabled { background: #d3f0e0; }
+.molzen-editor button.mz-accent-blue { background: #e7f2fa; border-color: #8eb4d4; }
+.molzen-editor button.mz-accent-blue:hover:enabled { background: #d5e8f6; }
+.molzen-editor button.mz-accent-gold { background: #fbf4e4; border-color: #e0c07a; }
+.molzen-editor button.mz-accent-gold:hover:enabled { background: #f6e8c8; }
+.molzen-editor button.mz-accent-violet { background: #f3eefb; border-color: #b7a8dc; }
+.molzen-editor button.mz-accent-violet:hover:enabled { background: #e7def6; }
+.molzen-editor .mz-atoms { min-width: 125px; }
+.molzen-editor .mz-torsion { width: 65px; }
+.molzen-editor .mz-summary, .molzen-editor .mz-preview { color: #526570; }
+.molzen-editor .mz-preview:not(:empty) { color: #8a5a12; }
+.molzen-editor .mz-selection.mz-has-selection { color: #1d7a48; font-weight: 600; }
+.molzen-editor .mz-status, .molzen-editor .mz-diagnostics { padding: 6px 10px; white-space: pre-line; }
+.molzen-editor .mz-diagnostics { color: #80520e; max-height: 100px; overflow-y: auto; }
+.molzen-editor .mz-error { color: #b3261e; }

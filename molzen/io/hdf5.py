@@ -8,6 +8,9 @@ from typing import Any, Mapping
 import numpy as np
 
 _ALLOWED_KEYS = {
+    "atom_records",
+    "bonds",
+    "_legacy_view",
     "xyz",
     "atom_names",
     "elements",

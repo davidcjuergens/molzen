@@ -120,6 +120,33 @@ def test_show_single_frame_xyz_molecule(monkeypatch) -> None:
     assert view.zoomed
 
 
+@pytest.mark.parametrize("frame", [None, 1])
+@pytest.mark.parametrize("controls", [None, True, False])
+def test_static_views_have_export_controls_by_default(monkeypatch, frame, controls):
+    monkeypatch.setitem(sys.modules, "py3Dmol", FakePy3Dmol())
+    xyz = np.array([[[0.0, 0.0, 0.0]], [[1.0, 0.0, 0.0]]])
+    mol = Molecule(xyz=xyz[:1] if frame is None else xyz, elements=["H"])
+    kwargs = {} if controls is None else {"export_controls": controls}
+
+    view = mol.show(frame=frame, **kwargs)
+
+    assert view.model_text is not None
+    assert view.frames_text is None
+    assert ("Export PNG" in view.startjs) == (controls is not False)
+    assert ("Copy PNG" in view.startjs) == (controls is not False)
+    if controls is not False:
+        assert "for(var i = 0; i < 1; i++)" in view.startjs
+        assert "if(1 === 1)" in view.startjs
+
+
+def test_lower_level_view_has_export_controls_by_default(monkeypatch):
+    from molzen.visualize import show_molecule
+
+    monkeypatch.setitem(sys.modules, "py3Dmol", FakePy3Dmol())
+    mol = Molecule(xyz=np.zeros((1, 3)), elements=["H"])
+    assert "Export PNG" in show_molecule(mol).startjs
+
+
 def test_show_adds_atom_hover_labels(monkeypatch) -> None:
     fake_py3dmol = FakePy3Dmol()
     monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
