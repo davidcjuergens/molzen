@@ -474,7 +474,7 @@ def _add_py3dmol_gif_export_controls(
     filename: str = "molzen.gif",
     png_filename: str = "molzen.png",
 ) -> None:
-    """Attach browser-side GIF export controls to a py3Dmol trajectory view."""
+    """Attach browser-side PNG and GIF export controls to a py3Dmol view."""
     if total_time is not None:
         frame_delays_ms = _gif_total_time_delays_ms(
             n_frames,
@@ -950,6 +950,10 @@ def _add_py3dmol_gif_export_controls(
     }}
 
     function setFrame(frame) {{
+        if({n_frames} === 1) {{
+            viewer_UNIQUEID.render();
+            return waitForPaint();
+        }}
         var slider = document.getElementById("3dmol_frame_slider_UNIQUEID");
         var label = document.getElementById("3dmol_frame_label_UNIQUEID");
         if(slider) {{
@@ -1607,7 +1611,7 @@ def show_molecule_py3dmol(
     style: dict[str, Any] | None = None,
     animate: bool = False,
     show_slider: bool = True,
-    export_controls: bool = False,
+    export_controls: bool = True,
     gif_delay_ms: int = 120,
     gif_total_time: float | None = None,
     gif_bounce: bool = False,
@@ -1626,8 +1630,8 @@ def show_molecule_py3dmol(
         style: Optional 3Dmol.js style dictionary. Defaults to stick style.
         animate: Whether to start playback for multi-frame molecules.
         show_slider: Whether to add a frame slider for multi-frame molecules.
-        export_controls: Whether to add browser-side GIF export controls for
-            multi-frame molecules.
+        export_controls: Whether to add browser-side PNG and GIF export controls
+            (enabled by default), including for single-frame views.
         gif_delay_ms: Delay between exported GIF frames in milliseconds.
         gif_total_time: Total exported GIF duration in seconds. When provided,
             this overrides gif_delay_ms.
@@ -1665,19 +1669,10 @@ def show_molecule_py3dmol(
         )
         if show_slider:
             _add_py3dmol_frame_slider(view, n_frames, width)
-        if export_controls:
-            _add_py3dmol_gif_export_controls(
-                view,
-                n_frames,
-                width,
-                delay_ms=gif_delay_ms,
-                bounce=gif_bounce,
-                total_time=gif_total_time,
-                png_scale=png_scale,
-            )
         if animate:
             view.animate({"loop": "forward"})
     else:
+        n_frames = 1
         frame_index = 0 if frame is None else _coerce_frame_index(atom_records, frame)
         view.addModel(_xyz_text(atom_records, frame=frame_index), "xyz")
         _apply_py3dmol_style(view, style)
@@ -1690,6 +1685,17 @@ def show_molecule_py3dmol(
             n_frames=_frame_count(atom_records),
             frame=frame_index,
             height=height,
+        )
+
+    if export_controls:
+        _add_py3dmol_gif_export_controls(
+            view,
+            n_frames,
+            width,
+            delay_ms=gif_delay_ms,
+            bounce=gif_bounce,
+            total_time=gif_total_time,
+            png_scale=png_scale,
         )
 
     view.zoomTo()

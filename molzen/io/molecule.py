@@ -16,6 +16,7 @@ from . import hdf5 as hdf5_io
 from . import mol2 as mol2_io
 from . import npy as npy_io
 from . import pdb as pdb_io
+from . import pubchem as pubchem_io
 from . import rst7 as rst7_io
 from . import xyz as xyz_io
 
@@ -1482,7 +1483,7 @@ class Molecule(Mapping[str, Any]):
         frame: int | None = None,
         start: int | None = None,
         end: int | None = None,
-        export_controls: bool = False,
+        export_controls: bool = True,
         gif_delay_ms: int = 120,
         gif_total_time: float | None = None,
         gif_bounce: bool = False,
@@ -1498,8 +1499,8 @@ class Molecule(Mapping[str, Any]):
             frame: Optional frame index to show from the displayed frame range.
             start: Optional first frame index to include.
             end: Optional frame index at which to stop, exclusive.
-            export_controls: Whether to add browser-side GIF export controls for
-                multi-frame views.
+            export_controls: Whether to add browser-side PNG and GIF export
+                controls (enabled by default), including for single-frame views.
             gif_delay_ms: Delay between exported GIF frames in milliseconds.
             gif_total_time: Total exported GIF duration in seconds. When provided,
                 this overrides gif_delay_ms.
@@ -1531,6 +1532,24 @@ class Molecule(Mapping[str, Any]):
             atom_hover_labels=atom_hover_labels,
             atom_hover_duration=atom_hover_duration,
         )
+
+    @classmethod
+    def from_pubchem(cls, cid: int | str, *, timeout: float = 30.0) -> Molecule:
+        """Fetch one PubChem 3D conformer by compound ID (CID).
+
+        Coordinates are in angstroms, with shape ``(n_atoms, 3)``.
+        Includes all atoms supplied by PubChem, including explicit hydrogens.
+        No 2D fallback or local geometry generation is performed.
+
+        Args:
+            cid: Positive integer CID, or its decimal string representation.
+            timeout: Network timeout in seconds (default 30).
+
+        Raises:
+            ValueError: Invalid input, missing 3D record, or malformed response.
+            OSError: Network failure or other PubChem HTTP error.
+        """
+        return cls(_legacy_view="xyz", **pubchem_io.fetch_pubchem(cid, timeout=timeout))
 
     @classmethod
     def from_xyz(cls, file_path: str, **kwargs) -> Molecule:
