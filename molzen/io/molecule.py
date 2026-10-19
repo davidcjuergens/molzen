@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Iterator, Mapping
 
 import numpy as np
@@ -10,6 +11,7 @@ import os
 from molzen.amino_acids import aa2long, aa2num, aa_1_to_3, ncaas, oneletter_code
 from molzen.ptable import symbol_to_z
 from molzen.bonds import BondGraph, BondSuggestions, infer_bonds
+from molzen.kinematics import apply_rigid_motion, plane_alignment, rotation_matrix
 from molzen.io.orca.parse import parse_orca_output
 from molzen.io.terachem.parse import parse_terachem_output
 from . import dcd as dcd_io
@@ -54,6 +56,85 @@ _PDB_ATOM_INDEX = [
     {name.strip(): i for i, name in enumerate(long) if name is not None}
     for long in aa2long
 ]
+
+
+def _residue_identity(row: np.void) -> tuple[str, int, str, str, str]:
+    """Return the fields that define one residue."""
+    return (
+        str(row["record_name"]).strip(),
+        int(row["res_num"]),
+        str(row["chain_id"]).strip(),
+        str(row["i_code"]).strip(),
+        str(row["res_name"]).strip(),
+    )
+
+
+def _residue_identity_dict(
+    key: tuple[str, int, str, str, str],
+) -> dict[str, str | int]:
+    """Return a JSON-friendly residue identity."""
+    record_name, res_num, chain_id, i_code, res_name = key
+    return {
+        "record_name": record_name,
+        "res_num": res_num,
+        "chain_id": chain_id,
+        "i_code": i_code,
+        "res_name": res_name,
+    }
+
+
+def _disambiguate_joined_residues(
+    records: np.ndarray,
+    seen_keys: set[tuple[str, int, str, str, str]],
+) -> list[dict[str, dict[str, str | int]]]:
+    """Keep each input molecule's residues from merging with earlier inputs.
+
+    Residue identity is ``_residue_identity``. Keys that do not collide are left
+    unchanged, including their ``res_num`` and ``chain_id``. A colliding key
+    gets the next free ``res_num`` and is recorded in the returned remaps.
+    ``seen_keys`` is updated with the identities present after this molecule.
+    """
+    ordered: list[tuple[str, int, str, str, str]] = []
+    local: set[tuple[str, int, str, str, str]] = set()
+    for row in records:
+        key = _residue_identity(row)
+        if key not in local:
+            local.add(key)
+            ordered.append(key)
+
+    occupied = set(seen_keys)
+    occupied.update(ordered)
+    assigned: dict[tuple[str, int, str, str, str], tuple[str, int, str, str, str]] = {}
+    remaps: list[dict[str, dict[str, str | int]]] = []
+    for key in ordered:
+        if key not in seen_keys:
+            assigned[key] = key
+            continue
+        record_name, res_num, chain_id, i_code, res_name = key
+        new_res_num = res_num
+        candidate = key
+        while candidate in occupied:
+            new_res_num += 1
+            if new_res_num > int(np.iinfo(np.int32).max):
+                raise ValueError(
+                    "Cannot disambiguate residue numbers while joining molecules."
+                )
+            candidate = (record_name, new_res_num, chain_id, i_code, res_name)
+        assigned[key] = candidate
+        occupied.add(candidate)
+        remaps.append(
+            {
+                "original": _residue_identity_dict(key),
+                "remapped": _residue_identity_dict(candidate),
+            }
+        )
+
+    for row in records:
+        new_key = assigned[_residue_identity(row)]
+        if new_key[1] != int(row["res_num"]):
+            row["res_num"] = new_key[1]
+    seen_keys.update(assigned.values())
+    return remaps
 
 
 def atom_record_dtype(n_frames: int) -> np.dtype:
@@ -355,13 +436,7 @@ class Molecule(Mapping[str, Any]):
                 str(row["record_name"]).strip() == "ATOM"
                 or str(row["entity_kind"]).strip() == "polymer"
             )
-            key = (
-                str(row["record_name"]).strip(),
-                int(row["res_num"]),
-                str(row["chain_id"]).strip(),
-                str(row["i_code"]).strip(),
-                str(row["res_name"]).strip(),
-            )
+            key = _residue_identity(row)
             if key not in residue_lookup:
                 polymer_index = polymer_counter if is_polymer else -1
                 residue_lookup[key] = (residue_counter, polymer_index)
@@ -1031,6 +1106,152 @@ class Molecule(Mapping[str, Any]):
 
         return metadata
 
+    def translated(self, vector: np.ndarray) -> Molecule:
+        """Return a translated copy of this molecule.
+
+        Args:
+            vector: Translation added to every atom in every frame, in angstroms.
+
+        Raises:
+            ValueError: If the molecule has no atoms or ``vector`` is not a
+                finite length-3 array.
+        """
+        self._require_atom_records()
+        shift = np.asarray(vector, dtype=float)
+        if shift.shape != (3,) or not np.isfinite(shift).all():
+            raise ValueError("vector must be a finite length-3 translation.")
+        return self._with_rigid_motion(np.eye(3), translation=shift)
+
+    def rotated(
+        self,
+        axis: np.ndarray,
+        angle_degrees: float,
+        *,
+        origin: np.ndarray | None = None,
+    ) -> Molecule:
+        """Return a copy rotated about ``axis`` by the right-hand rule.
+
+        Args:
+            axis: Lab-frame axis. Its length is ignored.
+            angle_degrees: Rotation angle in degrees, matching
+                ``rotate_around_dihedral``.
+            origin: Point the axis passes through. Defaults to the centroid
+                of frame 0.
+
+        Raises:
+            ValueError: If the axis has zero length or the molecule has no atoms.
+        """
+        records = self._require_atom_records()
+        if origin is None:
+            if len(records) == 0:
+                raise ValueError("Cannot rotate a molecule with no atoms.")
+            pivot = records["coords"][:, 0].astype(float).mean(axis=0)
+        else:
+            pivot = np.asarray(origin, dtype=float)
+            if pivot.shape != (3,) or not np.isfinite(pivot).all():
+                raise ValueError("origin must be a finite length-3 point.")
+        return self._with_rigid_motion(
+            rotation_matrix(axis, angle_degrees), origin=pivot
+        )
+
+    def aligned_to_plane(
+        self,
+        atom_indices: list[int] | None = None,
+        *,
+        frame: int = 0,
+        normal: np.ndarray = (0, 0, 1),
+    ) -> Molecule:
+        """Return a copy whose selected atoms lie in a plane through the origin.
+
+        The plane is fit to ``frame`` only. That same rotation and translation
+        are then applied to every atom and every frame. ``atom_indices`` are
+        stable ``atom_index`` values; the default is every non-hydrogen atom.
+
+        Args:
+            atom_indices: Atoms used to fit the plane. At least three are required.
+            frame: Coordinate frame used for the fit.
+            normal: Lab-frame direction the best-fit normal is aligned to.
+
+        Raises:
+            ValueError: If fewer than three atoms are selected or they do not
+                span a plane.
+            IndexError: If ``frame`` is outside the trajectory.
+        """
+        records = self._require_atom_records()
+        n_frames = self._frame_count(records)
+        if isinstance(frame, bool) or not isinstance(frame, (int, np.integer)):
+            raise TypeError("frame must be an integer.")
+        frame_index = int(frame)
+        if frame_index < 0 or frame_index >= n_frames:
+            raise IndexError(
+                f"Frame index {frame_index} out of range for {n_frames} frame(s)."
+            )
+        selected = self._plane_fit_rows(atom_indices)
+        if len(selected) < 3:
+            raise ValueError("At least three atoms are required to fit a plane.")
+        origin, rotation, translation = plane_alignment(
+            records["coords"][selected, frame_index], normal
+        )
+        return self._with_rigid_motion(rotation, origin=origin, translation=translation)
+
+    def _require_atom_records(self) -> np.ndarray:
+        """Return atom records or reject an empty molecule."""
+        if self._atom_records is None:
+            raise ValueError("No atom_records available.")
+        return self._atom_records
+
+    def _plane_fit_rows(self, atom_indices: list[int] | None) -> np.ndarray:
+        """Resolve plane-fit atoms to row positions."""
+        records = self._require_atom_records()
+        if atom_indices is None:
+            elements = np.char.upper(np.char.strip(records["element"].astype(str)))
+            return np.flatnonzero(elements != "H")
+        if isinstance(atom_indices, (str, bytes)):
+            raise TypeError("atom_indices must be atom IDs.")
+        try:
+            ids = [int(atom_id) for atom_id in atom_indices]
+        except (TypeError, ValueError) as exc:
+            raise TypeError("atom_indices must be atom IDs.") from exc
+        if any(isinstance(atom_id, bool) for atom_id in atom_indices):
+            raise TypeError("atom_indices must be atom IDs.")
+        if len(set(ids)) != len(ids):
+            raise ValueError("atom_indices must be unique.")
+        rows = []
+        known = records["atom_index"]
+        for atom_id in ids:
+            matches = np.flatnonzero(known == atom_id)
+            if len(matches) != 1:
+                raise ValueError(f"Atom {atom_id} does not exist or is not unique.")
+            rows.append(int(matches[0]))
+        return np.asarray(rows, dtype=int)
+
+    def _with_rigid_motion(
+        self,
+        rotation: np.ndarray,
+        *,
+        origin: np.ndarray | None = None,
+        translation: np.ndarray | None = None,
+    ) -> Molecule:
+        """Copy this molecule and apply one rigid motion to every frame."""
+        records = np.array(self._require_atom_records(), copy=True)
+        records["coords"] = apply_rigid_motion(
+            records["coords"], rotation, origin=origin, translation=translation
+        )
+        bonds = (
+            None
+            if self._bonds is None
+            else BondGraph(self._bonds.records, status=self._bonds.status)
+        )
+        return Molecule(
+            atom_records=records,
+            comments=None if self._comments is None else list(self._comments),
+            spinmult=self.spinmult,
+            metadata=copy.deepcopy(self._metadata),
+            excited_state_records=self.excited_state_records,
+            _legacy_view=self._legacy_view,
+            bonds=bonds,
+        )
+
     @classmethod
     def cat_frames(cls, molecules: list[Molecule]) -> Molecule:
         """Concatenate molecules along the coordinate-frame axis.
@@ -1193,6 +1414,147 @@ class Molecule(Mapping[str, Any]):
         return {
             "cat_frames": {"segments": segments, "frame_boundaries": frame_boundaries}
         }
+
+    @classmethod
+    def join(
+        cls,
+        molecules: list[Molecule],
+        *,
+        comments: list[str] | None = None,
+        drop_excited_state_records: bool = False,
+    ) -> Molecule:
+        """Concatenate molecules along the atom axis.
+
+        Args:
+            molecules: Molecules to concatenate in order. Each must have atom
+                records and the same number of coordinate frames.
+            comments: Comments for the joined trajectory. When omitted, every
+                input comment sequence must already be identical.
+            drop_excited_state_records: Discard excited-state records instead of
+                refusing to join. Those records are never renumbered onto the
+                combined system.
+
+        Raises:
+            ValueError: If the inputs cannot be joined under the rules above.
+            TypeError: If any item is not a Molecule.
+
+        Returns:
+            A new molecule. Inputs are not modified. ``atom_index`` values are
+            reassigned to ``0..n-1`` and bond endpoints are remapped. No
+            intermolecular bonds are inferred.
+        """
+        if not molecules:
+            raise ValueError("At least one molecule is required.")
+        if any(not isinstance(mol, Molecule) for mol in molecules):
+            raise TypeError("All items must be Molecule instances.")
+        if any(mol.atom_records is None for mol in molecules):
+            raise ValueError("All molecules must have atom_records.")
+
+        n_frames = cls._frame_count(molecules[0].atom_records)
+        for i, mol in enumerate(molecules[1:], start=1):
+            other_frames = cls._frame_count(mol.atom_records)
+            if other_frames != n_frames:
+                raise ValueError(
+                    "Cannot join molecules with different frame counts: "
+                    f"molecule 0 has {n_frames} frame(s), molecule {i} has "
+                    f"{other_frames} frame(s)."
+                )
+        joined_comments = cls._join_comments(molecules, comments, n_frames)
+        spinmult = cls._join_spinmult(molecules)
+        if any(mol.excited_state_records for mol in molecules):
+            if not drop_excited_state_records:
+                raise ValueError(
+                    "Cannot join molecules that have excited_state_records. "
+                    "Pass drop_excited_state_records=True to discard them."
+                )
+
+        pieces: list[np.ndarray] = []
+        segments: list[dict[str, Any]] = []
+        bond_rows: list[tuple] = []
+        seen_residues: set[tuple[str, int, str, str, str]] = set()
+        graphs = [mol.bonds for mol in molecules]
+        atom_start = 0
+        for i, mol in enumerate(molecules):
+            records = np.array(mol.atom_records, copy=True)
+            old_ids = [int(atom_id) for atom_id in records["atom_index"]]
+            if len(set(old_ids)) != len(old_ids):
+                raise ValueError(
+                    "atom_index values must be unique within each molecule."
+                )
+            id_map = {old: atom_start + offset for offset, old in enumerate(old_ids)}
+            residue_remaps = _disambiguate_joined_residues(records, seen_residues)
+            pieces.append(records)
+            atom_stop = atom_start + len(records)
+            segments.append(
+                {
+                    "molecule_index": i,
+                    "atom_index_start": atom_start,
+                    "atom_index_stop": atom_stop,
+                    "metadata": copy.deepcopy(mol.metadata),
+                    "residue_remaps": residue_remaps,
+                }
+            )
+            graph = graphs[i]
+            if graph is not None:
+                for edge in graph.records:
+                    try:
+                        a = id_map[int(edge["a"])]
+                        b = id_map[int(edge["b"])]
+                    except KeyError as exc:
+                        raise ValueError(
+                            "Bond endpoint does not exist in atom_records."
+                        ) from exc
+                    bond_rows.append((a, b, str(edge["order"]), str(edge["source"])))
+            atom_start = atom_stop
+
+        atom_records = np.concatenate(pieces)
+        atom_records["atom_index"] = np.arange(len(atom_records), dtype=int)
+        atom_records["serial"] = np.arange(1, len(atom_records) + 1, dtype=int)
+        cls._assign_residue_indices(atom_records)
+        if all(graph is None for graph in graphs):
+            bonds = None
+        else:
+            complete = all(
+                graph is not None and graph.status == "complete" for graph in graphs
+            )
+            status = "complete" if complete else "partial"
+            bonds = BondGraph(bond_rows, status=status)
+
+        return cls(
+            atom_records=atom_records,
+            comments=joined_comments,
+            spinmult=spinmult,
+            metadata={"join": {"segments": segments}},
+            excited_state_records=None,
+            _legacy_view=molecules[0]._legacy_view,
+            bonds=bonds,
+        )
+
+    @classmethod
+    def _join_comments(
+        cls,
+        molecules: list[Molecule],
+        comments: list[str] | None,
+        n_frames: int,
+    ) -> list[str] | None:
+        """Resolve comments for an atom-axis join."""
+        if comments is not None:
+            return cls._normalize_comments(comments, n_frames)
+        sequences = [mol.comments for mol in molecules]
+        first = sequences[0]
+        if any(other != first for other in sequences[1:]):
+            raise ValueError(
+                "Cannot join molecules with different comments. Pass comments explicitly."
+            )
+        return None if first is None else list(first)
+
+    @staticmethod
+    def _join_spinmult(molecules: list[Molecule]) -> int | None:
+        """Return the common non-null spin multiplicity, if any."""
+        spinmults = {mol.spinmult for mol in molecules if mol.spinmult is not None}
+        if len(spinmults) > 1:
+            raise ValueError("Cannot join molecules with different spinmults.")
+        return next(iter(spinmults)) if spinmults else None
 
     def _slice_excited_state_records(
         self, selected_frame_indices: np.ndarray

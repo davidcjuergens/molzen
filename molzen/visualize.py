@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -16,6 +17,9 @@ if TYPE_CHECKING:
 
 
 _PLOT_FONT_FAMILY = "Arial, Helvetica, sans-serif"
+_GEOMETRY_PANEL_JS = (
+    Path(__file__).resolve().parent / "editor" / "static" / "geometry_panel.js"
+).read_text()
 _MULTIPLICITY_SORT_ORDER = {
     "singlet": 1,
     "doublet": 2,
@@ -323,6 +327,131 @@ def _set_py3dmol_hover_duration(view: Any, hover_duration: float) -> None:
     )
 
 
+def _geometry_atom_labels(atom_records: np.ndarray) -> list[dict[str, str]]:
+    """Return display labels in the same order as the viewer model."""
+    labels: list[dict[str, str]] = []
+    for row_position, row in enumerate(atom_records):
+        try:
+            atom_index = int(row["atom_index"])
+        except (TypeError, ValueError):
+            atom_index = row_position
+        element = str(row["element"]).strip() or "?"
+        labels.append({"label": f"{element} {atom_index}"})
+    return labels
+
+
+def _add_py3dmol_geometry_panel(
+    view: Any, atom_records: np.ndarray, width: str | int
+) -> None:
+    """Attach the shared geometry panel and click selection to a py3Dmol view."""
+    width_css = f"{width}px" if isinstance(width, int) else width
+    labels_json = json.dumps(_geometry_atom_labels(atom_records))
+    panel_html = f"""
+<div id="molzen_geometry_UNIQUEID" class="mz-geometry" aria-live="polite" style="width: {width_css}; margin: 6px auto 0 auto;"></div>
+"""
+    script = (
+        _GEOMETRY_PANEL_JS
+        + f"""
+var molzenGeometryLabels_UNIQUEID = {labels_json};
+var molzenGeometrySelected_UNIQUEID = [];
+var molzenGeometryShapes_UNIQUEID = [];
+var molzenGeometryAtomClicked_UNIQUEID = false;
+var molzenGeometryOrigin_UNIQUEID = null;
+function molzenGeometryPoints_UNIQUEID() {{
+    var modelAtoms = typeof viewer_UNIQUEID.selectedAtoms === "function" ? viewer_UNIQUEID.selectedAtoms({{}}) : [];
+    var points = [];
+    for(var i = 0; i < molzenGeometrySelected_UNIQUEID.length; i++) {{
+        var atom = modelAtoms[molzenGeometrySelected_UNIQUEID[i]];
+        var label = molzenGeometryLabels_UNIQUEID[molzenGeometrySelected_UNIQUEID[i]];
+        if(!atom || !label || !isFinite(atom.x) || !isFinite(atom.y) || !isFinite(atom.z)) {{
+            continue;
+        }}
+        points.push({{label: label.label, x: atom.x, y: atom.y, z: atom.z}});
+    }}
+    return points;
+}}
+function molzenGeometryClearShapes_UNIQUEID() {{
+    for(var i = 0; i < molzenGeometryShapes_UNIQUEID.length; i++) {{
+        if(typeof viewer_UNIQUEID.removeShape === "function") {{
+            viewer_UNIQUEID.removeShape(molzenGeometryShapes_UNIQUEID[i]);
+        }}
+    }}
+    molzenGeometryShapes_UNIQUEID = [];
+}}
+function molzenRefreshGeometry_UNIQUEID() {{
+    var panel = document.getElementById("molzen_geometry_UNIQUEID");
+    if(panel && typeof molzenGeometry !== "undefined") {{
+        molzenGeometry.render(panel, molzenGeometryPoints_UNIQUEID());
+    }}
+    molzenGeometryClearShapes_UNIQUEID();
+    var points = molzenGeometryPoints_UNIQUEID();
+    for(var i = 0; i < points.length; i++) {{
+        if(typeof viewer_UNIQUEID.addSphere !== "function") {{
+            break;
+        }}
+        molzenGeometryShapes_UNIQUEID.push(viewer_UNIQUEID.addSphere({{
+            center: {{x: points[i].x, y: points[i].y, z: points[i].z}},
+            radius: 0.45,
+            color: "#6fce96",
+            opacity: 0.35
+        }}));
+    }}
+    if(typeof viewer_UNIQUEID.setClickable === "function") {{
+        viewer_UNIQUEID.setClickable({{}}, true, molzenGeometrySelect_UNIQUEID);
+    }}
+}}
+function molzenGeometrySelect_UNIQUEID(atom) {{
+    molzenGeometryAtomClicked_UNIQUEID = true;
+    if(!atom || atom.index == null || !isFinite(atom.index)) {{
+        return;
+    }}
+    var index = Math.trunc(atom.index);
+    var position = molzenGeometrySelected_UNIQUEID.indexOf(index);
+    var maxAtoms = molzenGeometry.maxAtoms;
+    if(position >= 0) {{
+        molzenGeometrySelected_UNIQUEID.splice(position, 1);
+    }} else {{
+        molzenGeometrySelected_UNIQUEID = molzenGeometrySelected_UNIQUEID.slice(-(maxAtoms - 1));
+        molzenGeometrySelected_UNIQUEID.push(index);
+    }}
+    molzenRefreshGeometry_UNIQUEID();
+    viewer_UNIQUEID.render();
+}}
+window.molzenRefreshGeometry_UNIQUEID = molzenRefreshGeometry_UNIQUEID;
+var molzenGeometryViewport_UNIQUEID = document.getElementById("3dmolviewer_UNIQUEID");
+if(molzenGeometryViewport_UNIQUEID) {{
+    molzenGeometryViewport_UNIQUEID.addEventListener("pointerdown", function(event) {{
+        if(event.button !== 0) {{
+            return;
+        }}
+        molzenGeometryOrigin_UNIQUEID = {{x: event.clientX, y: event.clientY}};
+        molzenGeometryAtomClicked_UNIQUEID = false;
+    }});
+    molzenGeometryViewport_UNIQUEID.addEventListener("click", function(event) {{
+        if(molzenGeometryAtomClicked_UNIQUEID) {{
+            molzenGeometryAtomClicked_UNIQUEID = false;
+            return;
+        }}
+        if(!molzenGeometryOrigin_UNIQUEID || !molzenGeometrySelected_UNIQUEID.length) {{
+            return;
+        }}
+        var dx = event.clientX - molzenGeometryOrigin_UNIQUEID.x;
+        var dy = event.clientY - molzenGeometryOrigin_UNIQUEID.y;
+        if(dx * dx + dy * dy > 9) {{
+            return;
+        }}
+        molzenGeometrySelected_UNIQUEID = [];
+        molzenRefreshGeometry_UNIQUEID();
+        viewer_UNIQUEID.render();
+    }});
+}}
+molzenRefreshGeometry_UNIQUEID();
+"""
+    )
+    _insert_py3dmol_html_before_script(view, panel_html)
+    view.startjs += script
+
+
 def _insert_py3dmol_html_before_script(view: Any, html_fragment: str) -> None:
     """Insert HTML between the py3Dmol viewer markup and startup script."""
     script_marker = "<script>\n"
@@ -334,41 +463,159 @@ def _insert_py3dmol_html_before_script(view: Any, html_fragment: str) -> None:
 
 
 def _add_py3dmol_frame_slider(view: Any, n_frames: int, width: str | int) -> None:
-    """Attach a simple 3Dmol.js frame slider to a py3Dmol view."""
+    """Attach a frame slider, play button, and loop-time control to a py3Dmol view.
+
+    Loop time ``None (off)`` plays through the frames once, at a four-second
+    pace, and then stops. A selected duration repeats the trajectory so that
+    one pass takes that many seconds.
+    """
     width_css = f"{width}px" if isinstance(width, int) else width
     slider_html = f"""
 <div id="3dmol_frame_controls_UNIQUEID" style="display: flex; align-items: center; gap: 8px; width: {width_css}; margin: 4px auto 0 auto; font: 12px sans-serif;">
+  <button id="3dmol_play_UNIQUEID" type="button" aria-label="Play" title="Play" style="font: inherit; width: 28px; height: 24px; padding: 0; cursor: pointer; line-height: 1;">▶</button>
   <input id="3dmol_frame_slider_UNIQUEID" type="range" min="0" max="{n_frames - 1}" value="0" step="1" style="flex: 1;">
   <span>Frame <span id="3dmol_frame_label_UNIQUEID">1</span>/{n_frames}</span>
+  <label style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">Loop time
+    <select id="3dmol_loop_time_UNIQUEID" aria-label="Loop time" style="font: inherit;">
+      <option value="">None (off)</option>
+      <option value="2">2 s</option>
+      <option value="4">4 s</option>
+      <option value="6">6 s</option>
+      <option value="8">8 s</option>
+      <option value="10">10 s</option>
+    </select>
+  </label>
 </div>
 """
-    script = """
+    script = f"""
 var frameSlider_UNIQUEID = document.getElementById("3dmol_frame_slider_UNIQUEID");
 var frameLabel_UNIQUEID = document.getElementById("3dmol_frame_label_UNIQUEID");
-if(frameSlider_UNIQUEID && frameLabel_UNIQUEID) {
-    frameSlider_UNIQUEID.addEventListener("input", function() {
-        var frame = parseInt(this.value);
+var framePlay_UNIQUEID = document.getElementById("3dmol_play_UNIQUEID");
+var frameLoop_UNIQUEID = document.getElementById("3dmol_loop_time_UNIQUEID");
+var frameCount_UNIQUEID = {int(n_frames)};
+var framePlaybackTimer_UNIQUEID = null;
+var framePlaybackOn_UNIQUEID = false;
+var framePlaybackIndex_UNIQUEID = 0;
+function finishFrameUpdate() {{
+    if(typeof window.molzenEnableAtomHoverLabels_UNIQUEID === "function") {{
+        window.molzenEnableAtomHoverLabels_UNIQUEID();
+    }}
+    if(typeof window.molzenRefreshGeometry_UNIQUEID === "function") {{
+        window.molzenRefreshGeometry_UNIQUEID();
+    }}
+    viewer_UNIQUEID.render();
+}}
+function molzenShowFrame_UNIQUEID(frame) {{
+    framePlaybackIndex_UNIQUEID = frame;
+    if(frameSlider_UNIQUEID) {{
+        frameSlider_UNIQUEID.value = String(frame);
+    }}
+    if(frameLabel_UNIQUEID) {{
         frameLabel_UNIQUEID.textContent = String(frame + 1);
-        if(typeof window.molzenUpdateEnergyFrame_UNIQUEID === "function") {
-            window.molzenUpdateEnergyFrame_UNIQUEID(frame);
-        }
-        if(typeof window.molzenClearAtomHoverLabel_UNIQUEID === "function") {
-            window.molzenClearAtomHoverLabel_UNIQUEID();
-        }
-        function finishFrameUpdate() {
-            if(typeof window.molzenEnableAtomHoverLabels_UNIQUEID === "function") {
-                window.molzenEnableAtomHoverLabels_UNIQUEID();
-            }
-            viewer_UNIQUEID.render();
-        }
-        var framePromise = viewer_UNIQUEID.setFrame(frame);
-        if(framePromise && typeof framePromise.then === "function") {
-            framePromise.then(finishFrameUpdate);
-        } else {
-            finishFrameUpdate();
-        }
-    });
-}
+    }}
+    if(typeof window.molzenUpdateEnergyFrame_UNIQUEID === "function") {{
+        window.molzenUpdateEnergyFrame_UNIQUEID(frame);
+    }}
+    if(typeof window.molzenClearAtomHoverLabel_UNIQUEID === "function") {{
+        window.molzenClearAtomHoverLabel_UNIQUEID();
+    }}
+    var framePromise = viewer_UNIQUEID.setFrame(frame);
+    if(framePromise && typeof framePromise.then === "function") {{
+        framePromise.then(finishFrameUpdate);
+    }} else {{
+        finishFrameUpdate();
+    }}
+}}
+function molzenLoopSeconds_UNIQUEID() {{
+    if(!frameLoop_UNIQUEID) {{
+        return null;
+    }}
+    var seconds = parseFloat(frameLoop_UNIQUEID.value);
+    return isFinite(seconds) && seconds > 0 ? seconds : null;
+}}
+function molzenFrameDelay_UNIQUEID() {{
+    var seconds = molzenLoopSeconds_UNIQUEID();
+    if(seconds == null) {{
+        seconds = 4;
+    }}
+    return Math.max(1, Math.round(seconds * 1000 / frameCount_UNIQUEID));
+}}
+function molzenStopPlayback_UNIQUEID() {{
+    framePlaybackOn_UNIQUEID = false;
+    if(framePlaybackTimer_UNIQUEID) {{
+        clearTimeout(framePlaybackTimer_UNIQUEID);
+        framePlaybackTimer_UNIQUEID = null;
+    }}
+    if(framePlay_UNIQUEID) {{
+        framePlay_UNIQUEID.textContent = "▶";
+        framePlay_UNIQUEID.setAttribute("aria-label", "Play");
+        framePlay_UNIQUEID.title = "Play";
+    }}
+}}
+function molzenQueuePlayback_UNIQUEID() {{
+    if(framePlaybackTimer_UNIQUEID) {{
+        clearTimeout(framePlaybackTimer_UNIQUEID);
+    }}
+    framePlaybackTimer_UNIQUEID = setTimeout(function() {{
+        if(!framePlaybackOn_UNIQUEID) {{
+            return;
+        }}
+        var next = framePlaybackIndex_UNIQUEID + 1;
+        if(next >= frameCount_UNIQUEID) {{
+            if(molzenLoopSeconds_UNIQUEID() == null) {{
+                molzenStopPlayback_UNIQUEID();
+                return;
+            }}
+            next = 0;
+        }}
+        molzenShowFrame_UNIQUEID(next);
+        molzenQueuePlayback_UNIQUEID();
+    }}, molzenFrameDelay_UNIQUEID());
+}}
+function molzenStartPlayback_UNIQUEID() {{
+    framePlaybackOn_UNIQUEID = true;
+    if(framePlay_UNIQUEID) {{
+        framePlay_UNIQUEID.textContent = "⏸";
+        framePlay_UNIQUEID.setAttribute("aria-label", "Pause");
+        framePlay_UNIQUEID.title = "Pause";
+    }}
+    if(framePlaybackIndex_UNIQUEID >= frameCount_UNIQUEID - 1 && molzenLoopSeconds_UNIQUEID() == null) {{
+        molzenShowFrame_UNIQUEID(0);
+    }} else {{
+        var next = framePlaybackIndex_UNIQUEID + 1;
+        if(next >= frameCount_UNIQUEID) {{
+            next = 0;
+        }}
+        molzenShowFrame_UNIQUEID(next);
+    }}
+    molzenQueuePlayback_UNIQUEID();
+}}
+if(frameSlider_UNIQUEID && frameLabel_UNIQUEID) {{
+    frameSlider_UNIQUEID.addEventListener("input", function() {{
+        var frame = parseInt(this.value, 10);
+        if(!isFinite(frame)) {{
+            return;
+        }}
+        molzenShowFrame_UNIQUEID(frame);
+    }});
+}}
+if(framePlay_UNIQUEID) {{
+    framePlay_UNIQUEID.addEventListener("click", function() {{
+        if(framePlaybackOn_UNIQUEID) {{
+            molzenStopPlayback_UNIQUEID();
+        }} else {{
+            molzenStartPlayback_UNIQUEID();
+        }}
+    }});
+}}
+if(frameLoop_UNIQUEID) {{
+    frameLoop_UNIQUEID.addEventListener("change", function() {{
+        if(!framePlaybackOn_UNIQUEID) {{
+            return;
+        }}
+        molzenQueuePlayback_UNIQUEID();
+    }});
+}}
 """
     _insert_py3dmol_html_before_script(view, slider_html)
     view.startjs += script
@@ -1698,6 +1945,7 @@ def show_molecule_py3dmol(
             png_scale=png_scale,
         )
 
+    _add_py3dmol_geometry_panel(view, atom_records, width)
     view.zoomTo()
     return view
 

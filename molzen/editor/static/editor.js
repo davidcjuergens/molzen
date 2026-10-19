@@ -23,10 +23,11 @@ function render({ model, el }) {
       <span class="mz-summary"></span>
     </div>
     <div class="mz-viewport"></div>
+    <div class="mz-geometry" aria-live="polite"></div>
     <div class="mz-controls">
       <label>Selected atoms <select class="mz-atoms" multiple size="4" aria-label="Selected atoms"></select></label>
       <div>
-        <div class="mz-selection">Click an atom to select it. Select two to edit a bond. Click empty space to clear.</div>
+        <div class="mz-selection">Click atoms to select up to four. Select two to edit a bond. Click empty space to clear.</div>
         <div class="mz-toolbar">
           <label>Element <select class="mz-element" aria-label="Element"></select></label>
           <button class="mz-accent-green" data-action="set_element">Change element</button>
@@ -127,7 +128,12 @@ function render({ model, el }) {
     selectionLabel.classList.toggle("mz-has-selection", selected.length > 0);
     selectionLabel.textContent = selected.length
       ? `Selected: ${selected.join(", ")}${edge ? ` · bond ${edge.order} (${edge.source})` : ""}`
-      : "Click an atom to select it. Select two to edit a bond. Click empty space to clear.";
+      : "Click atoms to select up to four. Select two to edit a bond. Click empty space to clear.";
+    const geometryAtoms = selected.flatMap(id => {
+      const match = state.atoms.find(candidate => candidate.id === id);
+      return match ? [{ label: `${match.elem} ${match.id}`, x: match.x, y: match.y, z: match.z }] : [];
+    });
+    globalThis.molzenGeometry.render(root.querySelector(".mz-geometry"), geometryAtoms);
     for (const button of root.querySelectorAll("button")) {
       const action = button.dataset.action;
       let disabled = Boolean(pending);
@@ -145,7 +151,8 @@ function render({ model, el }) {
   function selectAtom(id) {
     atomClicked = true;
     if (pending) return;
-    selected = selected.includes(id) ? selected.filter(value => value !== id) : [...selected.slice(-1), id];
+    const kept = globalThis.molzenGeometry.maxAtoms - 1;
+    selected = selected.includes(id) ? selected.filter(value => value !== id) : [...selected.slice(-kept), id];
     updateSelection();
   }
 
@@ -203,7 +210,7 @@ function render({ model, el }) {
     updateSelection();
   });
   atomList.addEventListener("change", () => {
-    selected = [...atomList.selectedOptions].slice(-2).map(option => Number(option.value));
+    selected = [...atomList.selectedOptions].slice(-globalThis.molzenGeometry.maxAtoms).map(option => Number(option.value));
     updateSelection();
   });
   root.addEventListener("click", event => {

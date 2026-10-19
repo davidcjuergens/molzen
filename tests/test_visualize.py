@@ -160,6 +160,8 @@ def test_show_adds_atom_hover_labels(monkeypatch) -> None:
     view = mol.show()
 
     assert "hoverDuration: 250" in view.startjs
+    assert "3dmol_play_UNIQUEID" not in view.startjs
+    assert "3dmol_loop_time_UNIQUEID" not in view.startjs
     assert "molzenAtomHoverLabels_UNIQUEID" in view.startjs
     assert '"name": "CA", "index": 0' in view.startjs
     assert '"name": "OXT", "index": 1' in view.startjs
@@ -172,6 +174,34 @@ def test_show_adds_atom_hover_labels(monkeypatch) -> None:
     assert (
         "viewer.removeLabel(window.molzenAtomHoverActiveLabel_UNIQUEID)" in view.startjs
     )
+
+
+def test_show_adds_shared_geometry_panel(monkeypatch) -> None:
+    fake_py3dmol = FakePy3Dmol()
+    monkeypatch.setitem(sys.modules, "py3Dmol", fake_py3dmol)
+    mol = Molecule(
+        xyz=np.array(
+            [
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]],
+            ],
+            dtype=float,
+        ),
+        elements=["C", "O"],
+    )
+
+    view = mol.show()
+
+    assert 'id="molzen_geometry_UNIQUEID"' in view.startjs
+    assert "Select 1–4 atoms." in view.startjs
+    assert "molzenGeometry.render" in view.startjs
+    assert "window.molzenRefreshGeometry_UNIQUEID" in view.startjs
+    assert '"label": "C 0"' in view.startjs
+    assert '"label": "O 1"' in view.startjs
+    assert "setClickable" in view.startjs
+    panel_at = view.startjs.index('id="molzen_geometry_UNIQUEID"')
+    viewer_at = view.startjs.index('id="3dmolviewer_UNIQUEID"')
+    assert viewer_at < panel_at
 
 
 def test_show_can_disable_atom_hover_labels(monkeypatch) -> None:
@@ -279,6 +309,14 @@ def test_show_multiframe_molecule_uses_py3dmol_frames(monkeypatch) -> None:
     assert "window.molzenClearAtomHoverLabel_UNIQUEID" in view.startjs
     assert "window.molzenEnableAtomHoverLabels_UNIQUEID" in view.startjs
     assert "framePromise.then(finishFrameUpdate)" in view.startjs
+    assert 'id="3dmol_play_UNIQUEID"' in view.startjs
+    assert 'aria-label="Play"' in view.startjs
+    assert "▶" in view.startjs
+    assert 'id="3dmol_loop_time_UNIQUEID"' in view.startjs
+    assert "Loop time" in view.startjs
+    assert ">None (off)</option>" in view.startjs
+    for seconds in (2, 4, 6, 8, 10):
+        assert f'value="{seconds}"' in view.startjs
     assert view.zoomed
 
 

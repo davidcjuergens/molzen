@@ -29,6 +29,7 @@ _RENDERER = (
     + (_STATIC / "3Dmol-min.js").read_text()
     + "\n}).call(globalThis); return module.exports; })();\n"
 )
+_GEOMETRY_PANEL = (_STATIC / "geometry_panel.js").read_text()
 
 
 class MoleculeEditor(anywidget.AnyWidget):
@@ -41,7 +42,7 @@ class MoleculeEditor(anywidget.AnyWidget):
         height: Viewport height in pixels or a CSS size string.
     """
 
-    _esm = _RENDERER + (_STATIC / "editor.js").read_text()
+    _esm = _RENDERER + _GEOMETRY_PANEL + (_STATIC / "editor.js").read_text()
     _css = _STATIC / "editor.css"
     state = traitlets.Dict().tag(sync=True)
     width = traitlets.Unicode("650px").tag(sync=True)
