@@ -276,6 +276,407 @@ Triplet state electronic transitions:
     ]
 
 
+def test_parse_state_resolved_dipole_moments():
+    """Singlet and triplet permanent dipoles should be grouped by root."""
+    raw = """
+Singlet state dipole moments:
+
+  Root       Dx         Dy         Dz         |D|  (Debye)
+------------------------------------------------------------
+     1    -1.7867    -0.0581     0.0072     1.7877
+     2    -1.2158    -0.0204     0.0130     1.2160
+
+Triplet state dipole moments:
+
+  Root       Dx         Dy         Dz         |D|  (Debye)
+------------------------------------------------------------
+     1    -0.9506    -0.0208     0.0139     0.9509
+     2    -1.4492    -0.0575     0.0103     1.4504
+
+Singlet state dipole moments:
+
+  Root       Dx         Dy         Dz         |D|  (Debye)
+------------------------------------------------------------
+     1    -1.7000    -0.0500     0.0100     1.7010
+     2    -1.2000    -0.0200     0.0100     1.2002
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    dipoles = parsed["casscf_state_dipoles"]
+    assert set(dipoles) == {"singlet", "triplet"}
+    assert dipoles["singlet"][1]["Dx"] == [-1.7867, -1.7000]
+    assert dipoles["singlet"][1]["Dy"] == [-0.0581, -0.0500]
+    assert dipoles["singlet"][1]["Dz"] == [0.0072, 0.0100]
+    assert dipoles["singlet"][1]["D_mag"] == [1.7877, 1.7010]
+    assert dipoles["singlet"][2]["Dx"] == [-1.2158, -1.2000]
+    assert dipoles["triplet"][1]["Dx"] == [-0.9506]
+    assert dipoles["triplet"][1]["D_mag"] == [0.9509]
+    assert dipoles["triplet"][2]["Dz"] == [0.0103]
+    assert dipoles["triplet"][2]["D_mag"] == [1.4504]
+
+    records = [
+        record
+        for record in parsed["excited_state_records"]
+        if record["source"] == "parse_casscf_state_dipole_section"
+    ]
+    assert len(records) == 6
+    assert records[0]["multiplicity"] == "singlet"
+    assert records[0]["section_idx"] == 0
+    assert records[0]["state_i"] == 0
+    assert records[0]["state_j"] == 0
+    assert records[0]["Dx"] == -1.7867
+    assert records[0]["D_mag"] == 1.7877
+    assert records[2]["multiplicity"] == "triplet"
+    assert records[2]["section_idx"] == 0
+    assert records[2]["state_j"] == 0
+    assert records[2]["Dz"] == 0.0139
+    assert records[4]["section_idx"] == 1
+    assert records[4]["state_j"] == 0
+    assert math.isnan(records[0]["Tx"])
+
+
+def test_parse_casscf_multipole_and_velocity_sections():
+    """Velocity, magnetic, and Cartesian quadrupole tables should parse by spin."""
+    raw = """
+Singlet state velocity transition dipole moments:
+
+ Transition      Px        Py        Pz       |P|    Osc. (a.u.)
+-----------------------------------------------------------------
+   1 ->  2    -0.0000    0.0002   -0.0005    0.0005    0.0000
+
+Singlet state magnetic transition dipole moments and rotational strengths:
+
+ Transition      Lx        Ly        Lz        |L|    R(vel) (a.u.)
+--------------------------------------------------------------------
+   1 ->  2     1.0305   -0.0243   -0.0012    1.0308   -0.0005
+
+Triplet state velocity transition dipole moments:
+
+ Transition      Px        Py        Pz       |P|    Osc. (a.u.)
+-----------------------------------------------------------------
+   1 ->  2    -0.0000    0.0000   -0.0008    0.0008    0.0000
+
+Triplet state magnetic transition dipole moments and rotational strengths:
+
+ Transition      Lx        Ly        Lz        |L|    R(vel) (a.u.)
+--------------------------------------------------------------------
+   1 ->  2    -0.8823    0.0134   -0.0011    0.8824    0.0001
+
+Singlet state electric quadrupole moments (Cartesian):
+Operator origin (a.u.):     2.076016,    -0.000000,    -0.000000
+
+ Root     Qxy        Qxz        Qyz        Qxx        Qyy        Qzz       R^2
+--------------------------------------------------------------------------------------------
+    1    -0.0480    -0.0079     0.0004   -12.6344   -15.3563   -14.6572   -42.6480
+    2    -0.0584    -0.0173    -0.0004   -13.4980   -13.2566   -16.5223   -43.2769
+
+Triplet state electric quadrupole moments (Cartesian):
+Operator origin (a.u.):     2.076016,    -0.000000,    -0.000000
+
+ Root     Qxy        Qxz        Qyz        Qxx        Qyy        Qzz       R^2
+--------------------------------------------------------------------------------------------
+    1    -0.0586    -0.0181    -0.0012   -13.5443   -13.2489   -16.4991   -43.2923
+    2    -0.0463    -0.0148     0.0013   -14.1220   -15.3107   -14.5139   -43.9465
+
+Singlet state electric transition quadrupole moments (Cartesian):
+
+ Transition     Qxy        Qxz        Qyz        Qxx        Qyy        Qzz       norm (a.u.)
+--------------------------------------------------------------------------------------------
+   1 ->  2     0.0030    -0.0100    -0.9855    -0.0015    -0.0008     0.0005     0.9855
+
+Triplet state electric transition quadrupole moments (Cartesian):
+
+ Transition     Qxy        Qxz        Qyz        Qxx        Qyy        Qzz       norm (a.u.)
+--------------------------------------------------------------------------------------------
+   1 ->  2     0.0022    -0.0175    -0.9056    -0.0004    -0.0014     0.0013     0.9057
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    velocity = parsed["casscf_velocity_transition_dipoles"]
+    assert velocity["singlet"]["1 -> 2"]["Px"] == [0.0]
+    assert velocity["singlet"]["1 -> 2"]["Py"] == [0.0002]
+    assert velocity["singlet"]["1 -> 2"]["Pz"] == [-0.0005]
+    assert velocity["singlet"]["1 -> 2"]["P_mag"] == [0.0005]
+    assert velocity["singlet"]["1 -> 2"]["velocity_osc_strength"] == [0.0]
+    assert velocity["triplet"]["1 -> 2"]["Pz"] == [-0.0008]
+    assert velocity["triplet"]["1 -> 2"]["P_mag"] == [0.0008]
+
+    magnetic = parsed["casscf_magnetic_transition_dipoles"]
+    assert magnetic["singlet"]["1 -> 2"]["Lx"] == [1.0305]
+    assert magnetic["singlet"]["1 -> 2"]["Ly"] == [-0.0243]
+    assert magnetic["singlet"]["1 -> 2"]["Lz"] == [-0.0012]
+    assert magnetic["singlet"]["1 -> 2"]["L_mag"] == [1.0308]
+    assert magnetic["singlet"]["1 -> 2"]["rot_strength"] == [-0.0005]
+    assert magnetic["triplet"]["1 -> 2"]["Lx"] == [-0.8823]
+    assert magnetic["triplet"]["1 -> 2"]["rot_strength"] == [0.0001]
+
+    quadrupoles = parsed["casscf_state_quadrupoles"]
+    singlet_root = quadrupoles["singlet"][1]
+    assert singlet_root["Qxy"] == [-0.0480]
+    assert singlet_root["Qxz"] == [-0.0079]
+    assert singlet_root["Qyz"] == [0.0004]
+    assert singlet_root["Qxx"] == [-12.6344]
+    assert singlet_root["Qyy"] == [-15.3563]
+    assert singlet_root["Qzz"] == [-14.6572]
+    assert singlet_root["R2"] == [-42.6480]
+    assert singlet_root["origin_x"] == [2.076016]
+    assert singlet_root["origin_y"] == [0.0]
+    assert singlet_root["origin_z"] == [0.0]
+    assert quadrupoles["singlet"][2]["Qzz"] == [-16.5223]
+    assert quadrupoles["triplet"][1]["Qxx"] == [-13.5443]
+    assert quadrupoles["triplet"][2]["R2"] == [-43.9465]
+
+    transition_quadrupoles = parsed["casscf_transition_quadrupoles"]
+    singlet_transition = transition_quadrupoles["singlet"]["1 -> 2"]
+    assert singlet_transition["Qxy"] == [0.0030]
+    assert singlet_transition["Qxz"] == [-0.0100]
+    assert singlet_transition["Qyz"] == [-0.9855]
+    assert singlet_transition["Qxx"] == [-0.0015]
+    assert singlet_transition["Qyy"] == [-0.0008]
+    assert singlet_transition["Qzz"] == [0.0005]
+    assert singlet_transition["Q_norm"] == [0.9855]
+    assert transition_quadrupoles["triplet"]["1 -> 2"]["Qyz"] == [-0.9056]
+    assert transition_quadrupoles["triplet"]["1 -> 2"]["Q_norm"] == [0.9057]
+
+    def records_from(source):
+        return [
+            record
+            for record in parsed["excited_state_records"]
+            if record["source"] == source
+        ]
+
+    velocity_records = records_from("parse_casscf_velocity_transition_dipole_section")
+    magnetic_records = records_from("parse_casscf_magnetic_transition_dipole_section")
+    quadrupole_records = records_from("parse_casscf_state_quadrupole_section")
+    transition_records = records_from("parse_casscf_transition_quadrupole_section")
+
+    assert len(velocity_records) == 2
+    assert velocity_records[0]["multiplicity"] == "singlet"
+    assert velocity_records[0]["section_idx"] == 0
+    assert velocity_records[0]["state_i"] == 0
+    assert velocity_records[0]["state_j"] == 1
+    assert velocity_records[0]["Py"] == 0.0002
+    assert math.isnan(velocity_records[0]["osc_strength"])
+    assert velocity_records[1]["multiplicity"] == "triplet"
+    assert velocity_records[1]["section_idx"] == 0
+
+    assert magnetic_records[0]["Lx"] == 1.0305
+    assert magnetic_records[0]["rot_strength"] == -0.0005
+    assert magnetic_records[0]["state_j"] == 1
+
+    assert quadrupole_records[0]["state_i"] == 0
+    assert quadrupole_records[0]["state_j"] == 0
+    assert quadrupole_records[0]["Qxx"] == -12.6344
+    assert quadrupole_records[0]["origin_x"] == 2.076016
+    assert quadrupole_records[1]["state_j"] == 1
+    assert quadrupole_records[2]["multiplicity"] == "triplet"
+    assert quadrupole_records[2]["section_idx"] == 0
+
+    assert transition_records[0]["Qyz"] == -0.9855
+    assert transition_records[0]["Q_norm"] == 0.9855
+    assert transition_records[0]["state_i"] == 0
+    assert transition_records[0]["state_j"] == 1
+    assert transition_records[1]["multiplicity"] == "triplet"
+    assert transition_records[1]["section_idx"] == 0
+
+
+def test_parse_fms_coordinates():
+    """FMS geometries should stack as Angstrom frames without consuming later sections."""
+    raw = """
+Receiving coordinates from FMS
+C        -0.03219779        0.00172618       -0.00127161
+S         1.63336114       -0.00201617        0.00012594
+H        -0.72094791        0.95766053        0.00557171
+H        -0.58319249       -0.91425953        0.00557171
+
+FINAL ENERGY: -400.123 a.u.
+
+Receiving coordinates from FMS
+C        -0.10000000        0.00000000        0.00000000
+S         1.60000000        0.00000000        0.00000000
+H        -0.70000000        0.90000000        0.00000000
+H        -0.50000000       -0.90000000        0.00000000
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    coordinates = parsed["fms_coordinates"]
+    assert coordinates["elements"] == ["C", "S", "H", "H"]
+    assert coordinates["units"] == "angstrom"
+    assert coordinates["xyz"].shape == (2, 4, 3)
+    np.testing.assert_allclose(
+        coordinates["xyz"][0, 0],
+        [-0.03219779, 0.00172618, -0.00127161],
+    )
+    np.testing.assert_allclose(
+        coordinates["xyz"][0, 1],
+        [1.63336114, -0.00201617, 0.00012594],
+    )
+    np.testing.assert_allclose(
+        coordinates["xyz"][1, 2],
+        [-0.70000000, 0.90000000, 0.00000000],
+    )
+    assert parsed["scf_energy"] == [-400.123]
+
+
+def test_parse_fms_coordinates_rejects_changed_element_order():
+    raw = """
+Receiving coordinates from FMS
+C 0.0 0.0 0.0
+H 1.0 0.0 0.0
+
+Receiving coordinates from FMS
+H 0.0 0.0 0.0
+C 1.0 0.0 0.0
+"""
+    with pytest.raises(ValueError, match="Element order changed"):
+        parse_terachem_output(raw, raw_str_in=True)
+
+
+def test_parse_spin_orbit_coupling_matrices():
+    """SOC headers name the states, and each block keeps its (S, Sz) matrix."""
+    raw = """
+Triplet[0] - Triplet[0] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (1.0, 1.0)    0.0000 +   0.0000i     0.0000 +   0.0000i     0.0000 +   0.0000i
+ (1.0, 0.0)   -0.0000 +   0.0000i     0.0000 +   0.0000i     0.0000 +   0.0000i
+ (1.0,-1.0)    0.0000 +   0.0000i    -0.0000 +   0.0000i     0.0000 -   0.0000i
+
+Triplet[0] - Triplet[1] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (1.0, 1.0)    0.0000 -   0.2513i     2.7643 - 148.1166i     0.0000 +   0.0000i
+ (1.0, 0.0)   -2.7643 - 148.1166i     0.0000 +  -0.0000i     2.7643 - 148.1166i
+ (1.0,-1.0)    0.0000 +   0.0000i    -2.7643 - 148.1166i     0.0000 +   0.2513i
+
+Triplet[1] - Triplet[1] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (1.0, 1.0)    0.0000 -   0.0000i    -0.0000 +   0.0000i     0.0000 +   0.0000i
+ (1.0, 0.0)    0.0000 +   0.0000i     0.0000 +  -0.0000i    -0.0000 +   0.0000i
+ (1.0,-1.0)    0.0000 +   0.0000i     0.0000 +   0.0000i     0.0000 +   0.0000i
+
+Singlet[0] - Triplet[0] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (0.0, 0.0)    3.0733 + 156.8173i     0.0000 +   0.3739i     3.0733 - 156.8173i
+
+Singlet[0] - Triplet[1] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (0.0, 0.0)    0.3748 -   0.0725i     0.0000 -   0.0027i     0.3748 +   0.0725i
+
+Singlet[1] - Triplet[0] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (0.0, 0.0)   -0.0201 -   0.0642i     0.0000 +   0.0002i    -0.0201 +   0.0642i
+
+Singlet[1] - Triplet[1] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (0.0, 0.0)   -2.8248 - 151.0035i     0.0000 +   0.2277i    -2.8248 + 151.0035i
+
+FINAL ENERGY: -400.0 a.u.
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    soc = parsed["spin_orbit_couplings"]
+    assert soc["units"] == "cm-1"
+    triplet = soc["couplings"]["triplet -> triplet"]
+    assert set(triplet) == {"0 -> 0", "0 -> 1", "1 -> 1"}
+    pair = triplet["0 -> 1"]
+    assert pair["state_i"] == 0
+    assert pair["state_j"] == 1
+    assert pair["multiplicity_i"] == "triplet"
+    assert pair["multiplicity_j"] == "triplet"
+    np.testing.assert_allclose(pair["row_S"], [1.0, 1.0, 1.0])
+    np.testing.assert_allclose(pair["row_Sz"], [1.0, 0.0, -1.0])
+    np.testing.assert_allclose(pair["col_S"], [1.0, 1.0, 1.0])
+    np.testing.assert_allclose(pair["col_Sz"], [1.0, 0.0, -1.0])
+    assert pair["soc"].shape == (1, 3, 3)
+    np.testing.assert_allclose(
+        pair["soc"][0],
+        [
+            [0.0 - 0.2513j, 2.7643 - 148.1166j, 0.0],
+            [-2.7643 - 148.1166j, 0.0, 2.7643 - 148.1166j],
+            [0.0, -2.7643 - 148.1166j, 0.0 + 0.2513j],
+        ],
+    )
+    assert np.signbit(pair["soc"][0, 1, 1].imag)
+
+    singlet = soc["couplings"]["singlet -> triplet"]["0 -> 0"]
+    assert singlet["state_i"] == 0
+    assert singlet["state_j"] == 0
+    np.testing.assert_allclose(singlet["row_S"], [0.0])
+    np.testing.assert_allclose(singlet["row_Sz"], [0.0])
+    assert singlet["soc"].shape == (1, 1, 3)
+    np.testing.assert_allclose(
+        singlet["soc"][0, 0],
+        [3.0733 + 156.8173j, 0.0 + 0.3739j, 3.0733 - 156.8173j],
+    )
+    excited = soc["couplings"]["singlet -> triplet"]["1 -> 1"]
+    assert excited["state_i"] == 1
+    assert excited["state_j"] == 1
+    np.testing.assert_allclose(
+        excited["soc"][0, 0],
+        [-2.8248 - 151.0035j, 0.0 + 0.2277j, -2.8248 + 151.0035j],
+    )
+    assert parsed["scf_energy"] == [-400.0]
+
+    records = [
+        record
+        for record in parsed["excited_state_records"]
+        if record["source"] == "parse_soc_section"
+    ]
+    assert len(records) == 7
+    assert records[1]["state_i"] == 0
+    assert records[1]["state_j"] == 1
+    assert records[1]["multiplicity_i"] == "triplet"
+    assert records[1]["multiplicity_j"] == "triplet"
+    assert records[1]["section_idx"] == 0
+    assert records[1]["soc_units"] == "cm-1"
+    np.testing.assert_allclose(records[1]["soc"], pair["soc"][0])
+    assert records[3]["multiplicity_i"] == "singlet"
+    assert records[3]["section_idx"] == 0
+    assert records[3]["soc"].shape == (1, 3)
+
+
+def test_parse_spin_orbit_coupling_stacks_repeated_pairs():
+    raw = """
+Singlet[0] - Triplet[1] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (0.0, 0.0)    0.1000 +   0.2000i     0.3000 +   0.4000i     0.5000 +   0.6000i
+
+Singlet[0] - Triplet[1] Spin-orbit coupling (cm-1):
+
+   (S, Sz)        (1.0, 1.0)           (1.0, 0.0)           (1.0,-1.0)
+--------------------------------------------------------------------------------
+ (0.0, 0.0)    1.1000 +   1.2000i     1.3000 +   1.4000i     1.5000 +   1.6000i
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+    coupling = parsed["spin_orbit_couplings"]["couplings"]["singlet -> triplet"][
+        "0 -> 1"
+    ]
+    assert coupling["soc"].shape == (2, 1, 3)
+    assert coupling["soc"][0, 0, 0] == pytest.approx(0.1 + 0.2j)
+    assert coupling["soc"][1, 0, 2] == pytest.approx(1.5 + 1.6j)
+    records = [
+        record
+        for record in parsed["excited_state_records"]
+        if record["source"] == "parse_soc_section"
+    ]
+    assert [record["section_idx"] for record in records] == [0, 1]
+
+
 def test_parse_eomccsd_energies_and_transition_properties():
     """EOM-CCSD energy and transition-properties sections should parse."""
     raw = """
