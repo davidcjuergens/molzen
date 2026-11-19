@@ -141,6 +141,11 @@ SCF_ENERGY_HEADER = "FINAL ENERGY:"
 EXCITED_STATES_RESULTS_HEADER = "Final Excited State Results"
 CASSCF_SINGLET_TRANSITION_DIPOLE_HEADER = "Singlet state electronic transitions:"
 CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER = "Triplet state electronic transitions:"
+# HH-TDA / FMS prints electric transition dipoles under this header, without an
+# oscillator-strength column. The multiplicity word is "singlet", "triplet", etc.
+_TRANSITION_DIPOLE_BETWEEN_STATES_RE = re.compile(
+    r"^\s*Transition dipole moments between\s+([A-Za-z]+)\s+states:\s*$"
+)
 _STATE_DIPOLE_HEADER_RE = re.compile(r"^\s*([A-Za-z]+)\s+state dipole moments:\s*$")
 _CASSCF_PROPERTY_HEADERS = (
     (
@@ -357,6 +362,10 @@ def parse_terachem_output(
             transition_multiplicity = "singlet"
         elif CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER in line:
             transition_multiplicity = "triplet"
+        else:
+            between_states_match = _TRANSITION_DIPOLE_BETWEEN_STATES_RE.match(line)
+            if between_states_match is not None:
+                transition_multiplicity = between_states_match.group(1).lower()
 
         if transition_multiplicity is not None:
             section_idx = len(out.get("casscf_transition_dipoles", []))
@@ -1352,14 +1361,15 @@ def parse_casscf_transition_dipole_section(
         transition_state1 = int(transition_match.group(1))
         transition_state2 = int(transition_match.group(2))
         parts = transition_match.group(3).strip().split()
-        assert len(parts) >= 5
+        # CASSCF prints Tx Ty Tz |T| Osc. HH-TDA / FMS omits the oscillator column.
+        assert len(parts) >= 4
 
         transition = f"{transition_state1} -> {transition_state2}"
         Tx = float(parts[0])
         Ty = float(parts[1])
         Tz = float(parts[2])
         T_mag = float(parts[3])
-        osc_strength = float(parts[4])
+        osc_strength = float(parts[4]) if len(parts) >= 5 else float("nan")
 
         out = dict(
             transition=transition,

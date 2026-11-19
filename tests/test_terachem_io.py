@@ -276,6 +276,78 @@ Triplet state electronic transitions:
     ]
 
 
+def test_parse_hhtda_transition_dipoles_without_oscillator_strength():
+    """HH-TDA transition dipoles are four columns, keyed by the printed pairs."""
+    raw = """
+    Transition dipole moments between singlet states:
+
+    Transition       Tx         Ty         Tz         |T| (a.u.)
+    ------------------------------------------------------------------
+         1 ->    2    -1.5879     0.0528     0.0551     1.5897
+         1 ->    3    -0.1606    -0.0904    -0.0664     0.1959
+         1 ->    4    -0.2719     0.0042    -0.0164     0.2724
+         1 ->    5    -0.0402    -0.0195    -0.0618     0.0762
+         1 ->    6    -0.0140    -0.0109    -0.0293     0.0343
+         2 ->    3     0.0103     0.0020     0.1211     0.1216
+         2 ->    4    -0.0325    -0.0060    -0.0363     0.0491
+         2 ->    5    -1.0324     0.0809     0.0169     1.0357
+         2 ->    6     1.8572    -0.0248    -0.0816     1.8592
+         3 ->    4     0.0529     0.0436    -0.0176     0.0708
+         3 ->    5    -0.2877    -0.3582    -0.0172     0.4598
+         3 ->    6    -0.0375    -0.2283    -0.0184     0.2321
+         4 ->    5    -0.7856    -0.0398    -0.0334     0.7873
+         4 ->    6    -0.3862    -0.0155    -0.0274     0.3875
+         5 ->    6    -0.1011    -0.0832    -0.0268     0.1337
+"""
+    parsed = parse_terachem_output(raw, raw_str_in=True)
+
+    dipoles = parsed["casscf_transition_dipoles"]["singlet"]
+    assert set(dipoles) == {
+        "1 -> 2",
+        "1 -> 3",
+        "1 -> 4",
+        "1 -> 5",
+        "1 -> 6",
+        "2 -> 3",
+        "2 -> 4",
+        "2 -> 5",
+        "2 -> 6",
+        "3 -> 4",
+        "3 -> 5",
+        "3 -> 6",
+        "4 -> 5",
+        "4 -> 6",
+        "5 -> 6",
+    }
+    assert dipoles["2 -> 3"]["Tx"] == [0.0103]
+    assert dipoles["2 -> 3"]["Ty"] == [0.0020]
+    assert dipoles["2 -> 3"]["Tz"] == [0.1211]
+    assert dipoles["2 -> 3"]["T_mag"] == [0.1216]
+    assert math.isnan(dipoles["2 -> 3"]["osc_strength"][0])
+    assert dipoles["1 -> 6"]["Tx"] == [-0.0140]
+    assert dipoles["1 -> 6"]["Ty"] == [-0.0109]
+    assert dipoles["1 -> 6"]["Tz"] == [-0.0293]
+    assert dipoles["1 -> 6"]["T_mag"] == [0.0343]
+    assert math.isnan(dipoles["1 -> 6"]["osc_strength"][0])
+
+    records = [
+        record
+        for record in parsed["excited_state_records"]
+        if record["source"] == "parse_casscf_transition_dipole_section"
+    ]
+    by_pair = {(record["state_i"], record["state_j"]): record for record in records}
+    assert len(records) == 15
+    assert by_pair[(1, 2)]["multiplicity"] == "singlet"
+    assert by_pair[(1, 2)]["Tx"] == 0.0103
+    assert by_pair[(1, 2)]["Ty"] == 0.0020
+    assert by_pair[(1, 2)]["Tz"] == 0.1211
+    assert math.isnan(by_pair[(1, 2)]["osc_strength"])
+    assert by_pair[(0, 5)]["Tx"] == -0.0140
+    assert by_pair[(0, 5)]["Ty"] == -0.0109
+    assert by_pair[(0, 5)]["Tz"] == -0.0293
+    assert math.isnan(by_pair[(0, 5)]["osc_strength"])
+
+
 def test_parse_state_resolved_dipole_moments():
     """Singlet and triplet permanent dipoles should be grouped by root."""
     raw = """
