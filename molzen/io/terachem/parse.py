@@ -20,10 +20,43 @@ STANDARDIZED_EXCITED_RECORD_DEFAULTS = {
     "Ty": np.nan,
     "Tz": np.nan,
     "T_mag": np.nan,
+    "Dx": np.nan,
+    "Dy": np.nan,
+    "Dz": np.nan,
+    "D_mag": np.nan,
+    "Px": np.nan,
+    "Py": np.nan,
+    "Pz": np.nan,
+    "P_mag": np.nan,
+    "velocity_osc_strength": np.nan,
+    "Lx": np.nan,
+    "Ly": np.nan,
+    "Lz": np.nan,
+    "L_mag": np.nan,
+    "rot_strength": np.nan,
+    "Qxy": np.nan,
+    "Qxz": np.nan,
+    "Qyz": np.nan,
+    "Qxx": np.nan,
+    "Qyy": np.nan,
+    "Qzz": np.nan,
+    "R2": np.nan,
+    "Q_norm": np.nan,
+    "origin_x": np.nan,
+    "origin_y": np.nan,
+    "origin_z": np.nan,
     "s_squared": np.nan,
     "max_ci_coeff": np.nan,
     "energy_gradient": None,
     "nonadiabatic_coupling": None,
+    "multiplicity_i": None,
+    "multiplicity_j": None,
+    "row_S": None,
+    "row_Sz": None,
+    "col_S": None,
+    "col_Sz": None,
+    "soc": None,
+    "soc_units": None,
 }
 
 _MULTIPLICITY_NAMES = {
@@ -108,10 +141,97 @@ SCF_ENERGY_HEADER = "FINAL ENERGY:"
 EXCITED_STATES_RESULTS_HEADER = "Final Excited State Results"
 CASSCF_SINGLET_TRANSITION_DIPOLE_HEADER = "Singlet state electronic transitions:"
 CASSCF_TRIPLET_TRANSITION_DIPOLE_HEADER = "Triplet state electronic transitions:"
+_STATE_DIPOLE_HEADER_RE = re.compile(r"^\s*([A-Za-z]+)\s+state dipole moments:\s*$")
+_CASSCF_PROPERTY_HEADERS = (
+    (
+        "casscf_velocity_transition_dipoles",
+        re.compile(r"^\s*([A-Za-z]+)\s+state velocity transition dipole moments:\s*$"),
+    ),
+    (
+        "casscf_magnetic_transition_dipoles",
+        re.compile(
+            r"^\s*([A-Za-z]+)\s+state magnetic transition dipole moments"
+            r" and rotational strengths:\s*$"
+        ),
+    ),
+    (
+        "casscf_transition_quadrupoles",
+        re.compile(
+            r"^\s*([A-Za-z]+)\s+state electric transition quadrupole"
+            r" moments \(Cartesian\):\s*$"
+        ),
+    ),
+    (
+        "casscf_state_quadrupoles",
+        re.compile(
+            r"^\s*([A-Za-z]+)\s+state electric quadrupole moments \(Cartesian\):\s*$"
+        ),
+    ),
+)
+_TRANSITION_PROPERTY_COLUMNS = {
+    "casscf_velocity_transition_dipoles": (
+        "Px",
+        "Py",
+        "Pz",
+        "P_mag",
+        "velocity_osc_strength",
+    ),
+    "casscf_magnetic_transition_dipoles": (
+        "Lx",
+        "Ly",
+        "Lz",
+        "L_mag",
+        "rot_strength",
+    ),
+    "casscf_transition_quadrupoles": (
+        "Qxy",
+        "Qxz",
+        "Qyz",
+        "Qxx",
+        "Qyy",
+        "Qzz",
+        "Q_norm",
+    ),
+}
+_ROOT_PROPERTY_COLUMNS = {
+    "casscf_state_quadrupoles": (
+        "Qxy",
+        "Qxz",
+        "Qyz",
+        "Qxx",
+        "Qyy",
+        "Qzz",
+        "R2",
+    ),
+}
+_PROPERTY_RECORD_SOURCES = {
+    "casscf_velocity_transition_dipoles": (
+        "parse_casscf_velocity_transition_dipole_section"
+    ),
+    "casscf_magnetic_transition_dipoles": (
+        "parse_casscf_magnetic_transition_dipole_section"
+    ),
+    "casscf_state_quadrupoles": "parse_casscf_state_quadrupole_section",
+    "casscf_transition_quadrupoles": "parse_casscf_transition_quadrupole_section",
+}
+_TRANSITION_ROW_RE = re.compile(r"^\s*(\d+)\s*->\s*(\d+)\s+(.*)$")
 CASSCF_ORB_ENERGIES_HEADER = "Orbital      Energy"
 EOMCCSD_ENERGIES_HEADER = "====> EOM-CCSD Energies <===="
 EOMCCSD_TRANSITION_PROPERTIES_HEADER = "====> EOM-CCSD Transition Properties <===="
 GRADIENT_HEADER = "Gradient units are Hartree/Bohr"
+FMS_COORDINATES_HEADER = "Receiving coordinates from FMS"
+_SOC_HEADER_RE = re.compile(
+    r"^\s*([A-Za-z]+)\[(\d+)\]\s*-\s*([A-Za-z]+)\[(\d+)\]\s+"
+    r"Spin-orbit coupling\s*\(([^)]+)\):\s*$"
+)
+_SPIN_PAIR_RE = re.compile(
+    r"\(\s*([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)\s*,\s*"
+    r"([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)\s*\)"
+)
+_COMPLEX_RE = re.compile(
+    r"([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)\s*([+-])\s*"
+    r"([+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?)i"
+)
 
 MINIMIZE_CONVERGED_HEADER = "Converged!"
 #### End constants ####
@@ -159,6 +279,15 @@ def parse_terachem_output(
             if tc_kwargs["run"] in ("minimize"):
                 running_minimization = True
 
+            continue
+
+        ### Coordinates sent by the FMS interface ###
+        if FMS_COORDINATES_HEADER in line:
+            frame, i = parse_fms_coordinate_section(lines, start=i)
+            frames = out.setdefault("fms_coordinates", [])
+            if frames and frame["elements"] != frames[0]["elements"]:
+                raise ValueError("Element order changed between FMS coordinate frames.")
+            frames.append(frame)
             continue
 
         ### Ground State Results ###
@@ -248,6 +377,51 @@ def parse_terachem_output(
                 out["casscf_transition_dipoles"] = [transition_dipole_data]
             else:
                 out["casscf_transition_dipoles"].append(transition_dipole_data)
+            continue
+
+        ### CASSCF-like state dipole moments (permanent dipoles, Debye) ###
+        state_dipole_spin = multiplicity_from_state_dipole_header(line)
+        if state_dipole_spin is not None:
+            parsed_state_dipoles = out.get("casscf_state_dipoles", [])
+            section_idx = sum(
+                section.get("multiplicity") == state_dipole_spin
+                for section in parsed_state_dipoles
+            )
+            state_dipole_data, section_records, i = parse_casscf_state_dipole_section(
+                lines,
+                start=i,
+                multiplicity=state_dipole_spin,
+                return_standardized_records=True,
+            )
+
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+
+            if out.get("casscf_state_dipoles", None) is None:
+                out["casscf_state_dipoles"] = [state_dipole_data]
+            else:
+                out["casscf_state_dipoles"].append(state_dipole_data)
+            continue
+
+        ### Velocity dipoles, magnetic dipoles, and Cartesian quadrupoles ###
+        property_header = casscf_property_section_header(line)
+        if property_header is not None:
+            property_key, property_spin = property_header
+            property_data, section_records, i = parse_casscf_property_section(
+                lines,
+                start=i,
+                kind=property_key,
+                multiplicity=property_spin,
+                return_standardized_records=True,
+            )
+            _append_multiplicity_section(
+                out,
+                property_key,
+                property_data,
+                section_records,
+                standardized_excited_records,
+            )
             continue
 
         ### CASSCF-like orbital energies and occupations ###
@@ -346,6 +520,25 @@ def parse_terachem_output(
                 )
             continue
 
+        ### Spin-orbit coupling matrices between indexed states ###
+        if soc_block_header(line) is not None:
+            soc_block, section_records, i = parse_soc_section(
+                lines, start=i, return_standardized_records=True
+            )
+            parsed_soc = out.get("spin_orbit_couplings", [])
+            section_idx = sum(
+                item["multiplicity_i"] == soc_block["multiplicity_i"]
+                and item["state_i"] == soc_block["state_i"]
+                and item["multiplicity_j"] == soc_block["multiplicity_j"]
+                and item["state_j"] == soc_block["state_j"]
+                for item in parsed_soc
+            )
+            for record in section_records:
+                record["section_idx"] = section_idx
+            standardized_excited_records.extend(section_records)
+            out.setdefault("spin_orbit_couplings", []).append(soc_block)
+            continue
+
         # CUSTOM SECTION PARSERS
         if custom_section_parsers is not None:
             parsed_custom = False
@@ -371,8 +564,24 @@ def parse_terachem_output(
         postprocess_casscf_energies(out)
     if out.get("casscf_transition_dipoles") is not None:
         postprocess_casscf_transition_dipoles(out)
+    if out.get("casscf_state_dipoles") is not None:
+        postprocess_casscf_state_dipoles(out)
+    for property_key, sort_labels in (
+        ("casscf_velocity_transition_dipoles", False),
+        ("casscf_magnetic_transition_dipoles", False),
+        ("casscf_transition_quadrupoles", False),
+        ("casscf_state_quadrupoles", True),
+    ):
+        if out.get(property_key) is not None:
+            postprocess_casscf_property_sections(
+                out, property_key, sort_labels=sort_labels
+            )
     if out.get("casscf_orbitals") is not None:
         postprocess_casscf_orbitals(out)
+    if out.get("fms_coordinates") is not None:
+        postprocess_fms_coordinates(out)
+    if out.get("spin_orbit_couplings") is not None:
+        postprocess_spin_orbit_couplings(out)
     return out
 
 
@@ -489,6 +698,90 @@ def postprocess_casscf_transition_dipoles(out):
     }
 
 
+def multiplicity_from_state_dipole_header(myline: str) -> str | None:
+    """Return the spin label from a 'Singlet state dipole moments:' style header."""
+    match = _STATE_DIPOLE_HEADER_RE.match(myline)
+    if match is None:
+        return None
+    return match.group(1).lower()
+
+
+def casscf_property_section_header(myline: str) -> tuple[str, str] | None:
+    """Return (output key, multiplicity) for a spin-labeled property header."""
+    for key, pattern in _CASSCF_PROPERTY_HEADERS:
+        match = pattern.match(myline)
+        if match is not None:
+            return key, match.group(1).lower()
+    return None
+
+
+def _append_multiplicity_section(
+    out: dict,
+    key: str,
+    section: dict,
+    section_records: list,
+    standardized_records: list,
+) -> None:
+    """Store one spin section and align its records with earlier sections of that spin."""
+    section_idx = sum(
+        item.get("multiplicity") == section["multiplicity"] for item in out.get(key, [])
+    )
+    for record in section_records:
+        record["section_idx"] = section_idx
+    standardized_records.extend(section_records)
+    out.setdefault(key, []).append(section)
+
+
+def _merge_labeled_maps(grouped: dict, sort_labels: bool = False) -> dict:
+    """Stack repeated {label: {field: value}} maps into {label: {field: [values]}}."""
+    merged = {}
+    for group, sections in grouped.items():
+        labels = []
+        field_names = []
+        for section in sections:
+            for label, values in section.items():
+                if label not in labels:
+                    labels.append(label)
+                for field in values:
+                    if field not in field_names:
+                        field_names.append(field)
+        if sort_labels:
+            labels = sorted(labels)
+            field_names = sorted(field_names)
+
+        merged[group] = {}
+        for label in labels:
+            merged[group][label] = {field: [] for field in field_names}
+            for section in sections:
+                values = section.get(label)
+                for field in field_names:
+                    merged[group][label][field].append(
+                        np.nan if values is None else values.get(field, np.nan)
+                    )
+    return merged
+
+
+def postprocess_casscf_property_sections(out, key: str, sort_labels: bool = False):
+    """Group a spin-labeled property by multiplicity, then by root or transition."""
+    grouped = {}
+    for section in out[key]:
+        grouped.setdefault(section["multiplicity"], []).append(section["rows"])
+    out[key] = _merge_labeled_maps(grouped, sort_labels=sort_labels)
+
+
+def postprocess_casscf_state_dipoles(out):
+    """Organize state dipole sections by multiplicity and root.
+
+    Each printed root keeps the 1-based index from the output. Repeated sections
+    (for example along an optimization) are stacked into lists, with missing
+    roots filled by NaN.
+    """
+    grouped = {}
+    for section in out["casscf_state_dipoles"]:
+        grouped.setdefault(section["multiplicity"], []).append(section["dipoles"])
+    out["casscf_state_dipoles"] = _merge_labeled_maps(grouped, sort_labels=True)
+
+
 def postprocess_casscf_energies(out):
     """Organize the CASSCF state data by root and put into more convenient format."""
     roots = sorted(
@@ -514,6 +807,58 @@ def postprocess_casscf_energies(out):
                 )
 
     out["casscf_energies"] = o
+
+
+def parse_fms_coordinate_section(lines: list, start: int) -> tuple[dict, int]:
+    """Parse one 'Receiving coordinates from FMS' geometry.
+
+    Atom lines are element symbol plus x, y, z. The printed coordinates are
+    Angstrom. Parsing stops at a blank line or the next non-coordinate line.
+    """
+    assert FMS_COORDINATES_HEADER in lines[start]
+
+    elements = []
+    coords = []
+    j = start + 1
+    while j < len(lines):
+        stripped = lines[j].strip()
+        if not stripped:
+            if coords:
+                break
+            j += 1
+            continue
+
+        parts = stripped.split()
+        if len(parts) != 4 or not parts[0][:1].isalpha():
+            if coords:
+                break
+            raise ValueError(f"Unexpected FMS coordinate line: {lines[j]}")
+
+        try:
+            xyz = [float(parts[1]), float(parts[2]), float(parts[3])]
+        except ValueError:
+            if coords:
+                break
+            raise ValueError(f"Unexpected FMS coordinate line: {lines[j]}") from None
+
+        elements.append(parts[0])
+        coords.append(xyz)
+        j += 1
+
+    if not coords:
+        raise ValueError("FMS coordinate section contained no atoms.")
+
+    return {"elements": elements, "xyz": np.asarray(coords, dtype=float)}, j
+
+
+def postprocess_fms_coordinates(out):
+    """Stack FMS geometries into one element list and an (n_frames, n_atoms, 3) array."""
+    frames = out["fms_coordinates"]
+    out["fms_coordinates"] = {
+        "elements": frames[0]["elements"],
+        "xyz": np.stack([frame["xyz"] for frame in frames], axis=0),
+        "units": "angstrom",
+    }
 
 
 def parse_gradient_section(lines: list, start: int) -> tuple[dict, int]:
@@ -788,6 +1133,207 @@ def parse_eomccsd_transition_mu_elements(
     if return_standardized_records:
         return out, standardized_records, j
     return out, j
+
+
+def parse_casscf_state_dipole_section(
+    lines: list,
+    start: int,
+    multiplicity: str,
+    return_standardized_records: bool = False,
+) -> dict:
+    """Parse a state-resolved permanent dipole section.
+
+    Expected layout (values are Debye, roots are 1-indexed as printed):
+
+        Singlet state dipole moments:
+
+          Root       Dx         Dy         Dz         |D|  (Debye)
+        ------------------------------------------------------------
+             1    -1.7867    -0.0581     0.0072     1.7877
+    """
+    source = inspect.currentframe().f_code.co_name
+    assert multiplicity_from_state_dipole_header(lines[start]) == multiplicity
+
+    def state_dipole_line_parser(myline):
+        parts = myline.strip().split()
+        if len(parts) != 5:
+            raise ValueError(f"Unexpected state dipole line format: {myline}")
+
+        return dict(
+            root=int(parts[0]),
+            Dx=float(parts[1]),
+            Dy=float(parts[2]),
+            Dz=float(parts[3]),
+            D_mag=float(parts[4]),
+        )
+
+    def is_dipole_header_line(myline):
+        stripped = myline.strip().lower()
+        return stripped.startswith("root") or set(stripped) == {"-"}
+
+    j = start + 1
+    out = {}
+    standardized_records = []
+    while j < len(lines):
+        line = lines[j]
+        stripped = line.strip()
+
+        if not stripped:
+            if out:
+                break
+            j += 1
+            continue
+
+        if is_dipole_header_line(line):
+            j += 1
+            continue
+
+        try:
+            dipole_data = state_dipole_line_parser(line)
+        except (TypeError, ValueError):
+            break
+
+        root = dipole_data.pop("root")
+        out[root] = dipole_data
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=root - 1,  # roots are 1-indexed in TC output
+                state_j=root - 1,
+                multiplicity=multiplicity,
+                Dx=dipole_data["Dx"],
+                Dy=dipole_data["Dy"],
+                Dz=dipole_data["Dz"],
+                D_mag=dipole_data["D_mag"],
+            )
+        )
+        j += 1
+
+    section = {"multiplicity": multiplicity, "dipoles": out}
+    if return_standardized_records:
+        return section, standardized_records, j
+    return section, j
+
+
+def _parse_operator_origin(myline: str) -> tuple[float, float, float]:
+    """Parse 'Operator origin (a.u.): x, y, z'."""
+    try:
+        _, values = myline.split(":", 1)
+        parts = [part.strip() for part in values.split(",")]
+        if len(parts) != 3:
+            raise ValueError
+        return tuple(float(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError(f"Unexpected operator origin format: {myline}") from exc
+
+
+def _parse_component_row(myline: str, columns: tuple[str, ...], indexed_by: str):
+    """Parse one root or transition row into components named by columns."""
+    if indexed_by == "transition":
+        match = _TRANSITION_ROW_RE.match(myline)
+        if match is None:
+            raise ValueError(f"Unexpected transition row format: {myline}")
+        state_i = int(match.group(1))
+        state_j = int(match.group(2))
+        label = f"{state_i} -> {state_j}"
+        parts = match.group(3).split()
+    elif indexed_by == "root":
+        parts = myline.strip().split()
+        if not parts:
+            raise ValueError(f"Unexpected root row format: {myline}")
+        state_i = state_j = int(parts[0])
+        label = state_i
+        parts = parts[1:]
+    else:
+        raise ValueError(f"Unknown property index '{indexed_by}'")
+
+    if len(parts) != len(columns):
+        raise ValueError(f"Unexpected property row format: {myline}")
+
+    values = {name: float(part) for name, part in zip(columns, parts)}
+    return label, state_i, state_j, values
+
+
+def parse_casscf_property_section(
+    lines: list,
+    start: int,
+    kind: str,
+    multiplicity: str,
+    return_standardized_records: bool = False,
+):
+    """Parse one spin-labeled velocity, magnetic, or quadrupole section.
+
+    Transition tables are keyed by the printed 'i -> j' label. State quadrupole
+    tables are keyed by the printed 1-based root. Component values are kept in the
+    units printed by TeraChem. State quadrupoles also store the operator origin.
+    """
+    header = casscf_property_section_header(lines[start])
+    assert header == (kind, multiplicity)
+    source = _PROPERTY_RECORD_SOURCES[kind]
+    if kind in _TRANSITION_PROPERTY_COLUMNS:
+        columns = _TRANSITION_PROPERTY_COLUMNS[kind]
+        indexed_by = "transition"
+    else:
+        columns = _ROOT_PROPERTY_COLUMNS[kind]
+        indexed_by = "root"
+
+    j = start + 1
+    rows = {}
+    origin = None
+    standardized_records = []
+    while j < len(lines):
+        line = lines[j]
+        stripped = line.strip()
+
+        if not stripped:
+            if rows:
+                break
+            j += 1
+            continue
+
+        lowered = stripped.lower()
+        if (
+            lowered.startswith("root")
+            or lowered.startswith("transition")
+            or set(stripped) == {"-"}
+        ):
+            j += 1
+            continue
+
+        if lowered.startswith("operator origin"):
+            origin = _parse_operator_origin(line)
+            j += 1
+            continue
+
+        try:
+            label, state_i, state_j, values = _parse_component_row(
+                line, columns, indexed_by
+            )
+        except (TypeError, ValueError):
+            break
+
+        rows[label] = values
+        standardized_records.append(
+            make_standardized_excited_record(
+                source=source,
+                state_i=state_i - 1,  # roots and transitions are 1-indexed in TC output
+                state_j=state_j - 1,
+                multiplicity=multiplicity,
+                **values,
+            )
+        )
+        j += 1
+
+    if origin is not None:
+        for values in rows.values():
+            values["origin_x"], values["origin_y"], values["origin_z"] = origin
+        for record in standardized_records:
+            record["origin_x"], record["origin_y"], record["origin_z"] = origin
+
+    section = {"multiplicity": multiplicity, "rows": rows}
+    if return_standardized_records:
+        return section, standardized_records, j
+    return section, j
 
 
 def parse_casscf_transition_dipole_section(
@@ -1095,34 +1641,174 @@ def parse_excited_state_section(
     return out, j
 
 
-def soc_parser(lines: list[str], start: int, n_S: int = 11, n_T: int = 11) -> dict:
-    """Parsers SOC section from terachem output.
+def soc_block_header(myline: str) -> dict | None:
+    """Return the two states named by a spin-orbit coupling header, if present."""
+    match = _SOC_HEADER_RE.match(myline)
+    if match is None:
+        return None
+    return {
+        "multiplicity_i": match.group(1).lower(),
+        "state_i": int(match.group(2)),
+        "multiplicity_j": match.group(3).lower(),
+        "state_j": int(match.group(4)),
+        "units": match.group(5).strip(),
+    }
 
-    Args:
-        lines (list[str]): List of lines from the terachem output file.
-        start (int): Index to start parsing from.
-        n_S (int): Number of singlet states INCLUDING S0.
-        n_T (int): Number of triplet states INCLUDING T0.
+
+def _complex_matrix_element(real_text: str, operator: str, imag_text: str) -> complex:
+    """Combine a printed 'a ± bi' element, including forms like '+  -0.0000i'."""
+    real = float(real_text)
+    imag = float(imag_text)
+    if imag_text[0] not in "+-" and operator == "-":
+        imag = -imag
+    return complex(real, imag)
+
+
+def parse_soc_section(
+    lines: list,
+    start: int,
+    return_standardized_records: bool = False,
+):
+    """Parse one spin-orbit coupling matrix.
+
+    The header indices are already 0-based, so Triplet[1] is state_j=1. Rows are
+    the (S, Sz) components of the first state and columns are those of the second.
+    Values are complex and are kept in the printed unit, usually cm-1. Triplet
+    blocks are 3x3 and singlet-triplet blocks are 1x3.
     """
+    header = soc_block_header(lines[start])
+    assert header is not None
+    source = inspect.currentframe().f_code.co_name
 
-    assert "SOC between" in lines[start]
-
-    def check_end(myline):
-        return "Total processing time" in myline
-
-    soc_matrix = np.full((n_S, n_T), np.nan)
-    j = start
-    while not check_end(lines[j]):
+    j = start + 1
+    col_s = None
+    col_sz = None
+    row_s = []
+    row_sz = []
+    matrix_rows = []
+    while j < len(lines):
         line = lines[j]
+        stripped = line.strip()
+        if not stripped:
+            if matrix_rows:
+                break
+            j += 1
+            continue
+        if set(stripped) == {"-"}:
+            j += 1
+            continue
+        if stripped.startswith("(S"):
+            pairs = _SPIN_PAIR_RE.findall(stripped)
+            if not pairs:
+                raise ValueError(f"Spin-orbit column header has no (S, Sz): {line}")
+            col_s = np.asarray([float(spin) for spin, _ in pairs], dtype=float)
+            col_sz = np.asarray([float(sz) for _, sz in pairs], dtype=float)
+            j += 1
+            continue
 
-        if "SOC between" in line:
-            split = line.strip().split()
-            singlet_idx = int(split[3][1:])
-            triplet_idx = int(split[5][1:])
-        elif "SOC Constant" in line:
-            SOC_constant = float(line.strip().split()[-1])
-            soc_matrix[singlet_idx, triplet_idx] = SOC_constant
+        pairs = _SPIN_PAIR_RE.findall(stripped)
+        components = _COMPLEX_RE.findall(stripped)
+        if len(pairs) != 1 or not components:
+            if matrix_rows:
+                break
+            raise ValueError(f"Unexpected spin-orbit row: {line}")
+        if col_s is None or len(components) != len(col_s):
+            raise ValueError(f"Spin-orbit row does not match the column header: {line}")
 
+        row_s.append(float(pairs[0][0]))
+        row_sz.append(float(pairs[0][1]))
+        matrix_rows.append(
+            [
+                _complex_matrix_element(real, operator, imag)
+                for real, operator, imag in components
+            ]
+        )
         j += 1
 
-    return {"soc_matrix": soc_matrix}, j
+    if not matrix_rows or col_s is None or col_sz is None:
+        raise ValueError(f"Spin-orbit section contained no matrix: {lines[start]}")
+
+    row_s = np.asarray(row_s, dtype=float)
+    row_sz = np.asarray(row_sz, dtype=float)
+    soc = np.asarray(matrix_rows, dtype=complex)
+    block = {
+        "multiplicity_i": header["multiplicity_i"],
+        "state_i": header["state_i"],
+        "multiplicity_j": header["multiplicity_j"],
+        "state_j": header["state_j"],
+        "units": header["units"],
+        "row_S": row_s,
+        "row_Sz": row_sz,
+        "col_S": col_s,
+        "col_Sz": col_sz,
+        "soc": soc,
+    }
+    standardized_records = [
+        make_standardized_excited_record(
+            source=source,
+            state_i=header["state_i"],
+            state_j=header["state_j"],
+            multiplicity_i=header["multiplicity_i"],
+            multiplicity_j=header["multiplicity_j"],
+            row_S=row_s,
+            row_Sz=row_sz,
+            col_S=col_s,
+            col_Sz=col_sz,
+            soc=soc,
+            soc_units=header["units"],
+        )
+    ]
+    if return_standardized_records:
+        return block, standardized_records, j
+    return block, j
+
+
+def postprocess_spin_orbit_couplings(out):
+    """Group SOC blocks by the two states and stack repeated geometries."""
+    blocks = out["spin_orbit_couplings"]
+    units = blocks[0]["units"]
+    grouped = {}
+    for block in blocks:
+        if block["units"] != units:
+            raise ValueError(
+                f"Inconsistent spin-orbit units: {block['units']!r} and {units!r}."
+            )
+        pair_group = f"{block['multiplicity_i']} -> {block['multiplicity_j']}"
+        pair = f"{block['state_i']} -> {block['state_j']}"
+        grouped.setdefault(pair_group, {}).setdefault(pair, []).append(block)
+
+    couplings = {}
+    for pair_group, pairs in grouped.items():
+        couplings[pair_group] = {}
+        for pair, repeats in pairs.items():
+            first = repeats[0]
+            for block in repeats[1:]:
+                for key in ("row_S", "row_Sz", "col_S", "col_Sz"):
+                    if not np.allclose(block[key], first[key]):
+                        raise ValueError(
+                            "Spin-orbit (S, Sz) labels changed for "
+                            f"{pair_group} {pair}."
+                        )
+            couplings[pair_group][pair] = {
+                "state_i": first["state_i"],
+                "state_j": first["state_j"],
+                "multiplicity_i": first["multiplicity_i"],
+                "multiplicity_j": first["multiplicity_j"],
+                "row_S": first["row_S"],
+                "row_Sz": first["row_Sz"],
+                "col_S": first["col_S"],
+                "col_Sz": first["col_Sz"],
+                "soc": np.stack([block["soc"] for block in repeats], axis=0),
+            }
+
+    out["spin_orbit_couplings"] = {"units": units, "couplings": couplings}
+
+
+def soc_parser(lines: list, start: int, return_standardized_records: bool = False):
+    """Parse one modern spin-orbit coupling block.
+
+    Replaces the retired scalar parser that read 'SOC between' / 'SOC Constant'.
+    """
+    return parse_soc_section(
+        lines, start, return_standardized_records=return_standardized_records
+    )
